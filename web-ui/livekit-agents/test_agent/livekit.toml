@@ -1,0 +1,6 @@
+[project]
+subdomain = "firstproject-ly6tfhj5"
+
+[agent]
+runtime = "python"
+entry_point = "agent.py"

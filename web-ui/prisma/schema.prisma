@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Slot {
+  id        String   @id @default(uuid())
+  name      String?
+  date      DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model File {
+  id        Int      @id @default(autoincrement())
+  name      String
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model CsvData {
+  id          String   @id @default(uuid())
+  phoneNumber String
+  name        String?
+  processed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Campaign {
+  id              String          @id @default(cuid())
+  name            String          @unique
+  description     String?
+  status          String          @default("DRAFT")
+  script          String?
+  totalLeads      Int             @default(0)
+  callsMade       Int             @default(0)
+  callsAnswered   Int             @default(0)
+  conversionRate  Float           @default(0.0)
+  averageDuration Float           @default(0.0)
+  totalCost       Float           @default(0.0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  analytics       CallAnalytics[]
+  agents          CampaignAgent[]
+  conversations   Conversation[]
+  leads           Lead[]
+  assignedLeadLists LeadList[]    @relation("LeadListCampaigns")
+}
+
+model LeadList {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  leads             Lead[]
+  assignedCampaigns Campaign[] @relation("LeadListCampaigns")
+
+  @@index([name])
+}
+
+model Lead {
+  id            String         @id @default(cuid())
+  phoneNumber   String
+  name          String?
+  email         String?
+  status        String         @default("PENDING")
+  errorReason   String?
+  campaignId    String?
+  listId        String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[]
+  campaign      Campaign?      @relation(fields: [campaignId], references: [id])
+  leadList      LeadList?      @relation(fields: [listId], references: [id])
+
+  @@index([campaignId])
+  @@index([listId])
+}
+
+model Conversation {
+  id            String    @id @default(cuid())
+  leadId        String
+  campaignId    String
+  agentId       String?
+  status        String    @default("IN_PROGRESS")
+  callStartTime DateTime?
+  callEndTime   DateTime?
+  duration      Int?
+  results       Json?
+  transcript    String?
+  sentiment     String?
+  leadScore     Int?
+  outcome       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  agent         Agent?    @relation(fields: [agentId], references: [id])
+  campaign      Campaign  @relation(fields: [campaignId], references: [id])
+  lead          Lead      @relation(fields: [leadId], references: [id])
+
+  @@index([campaignId])
+  @@index([agentId])
+}
+
+model PhoneNumber {
+  id              String   @id @default(cuid())
+  number          String   @unique
+  friendlyName    String?
+  status          String   @default("AVAILABLE")
+  capabilities    String
+  twilioSid       String   @unique
+  twilioAccount   String
+  country         String
+  region          String?
+  monthlyCost     Float    @default(0.0)
+  assignedAgentId String?  @unique
+  callDirection   String   @default("BOTH")
+  webhookUrl      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  assignedAgent   Agent?
+
+  @@index([status])
+  @@index([assignedAgentId])
+  @@index([callDirection])
+}
+
+model Agent {
+  id              String          @id @default(cuid())
+  name            String          @unique
+  description     String?
+  prompt          String
+  model           String          @default("gpt-4")
+  voice           String          @default("nova")
+  temperature     Float           @default(0.7)
+  maxTokens       Int             @default(1000)
+  status          String          @default("INACTIVE")
+  deploymentMode  String          @default("livekit")
+  template        String          @default("custom")
+  customerName    String?
+  appointmentTime String?
+  sttProvider     String          @default("deepgram")
+  ttsProvider     String          @default("openai")
+  phoneNumberId   String?         @unique
+  livekitConfig   Json?
+  twilioConfig    Json?
+  performance     Json?
+  totalCalls      Int             @default(0)
+  successfulCalls Int             @default(0)
+  conversionRate  Float           @default(0.0)
+  averageDuration Float           @default(0.0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  phoneNumber     PhoneNumber?    @relation(fields: [phoneNumberId], references: [id])
+  campaigns       CampaignAgent[]
+  conversations   Conversation[]
+
+  @@index([status])
+  @@index([phoneNumberId])
+}
+
+model CampaignAgent {
+  id         String   @id @default(cuid())
+  campaignId String
+  agentId    String
+  isActive   Boolean  @default(true)
+  priority   Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  agent      Agent    @relation(fields: [agentId], references: [id])
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+
+  @@unique([campaignId, agentId])
+  @@index([campaignId])
+  @@index([agentId])
+}
+
+model CallAnalytics {
+  id               String    @id @default(cuid())
+  campaignId       String
+  agentId          String?
+  leadId           String
+  phoneNumber      String
+  callStartTime    DateTime
+  callEndTime      DateTime?
+  duration         Int?
+  status           String
+  outcome          String?
+  transcript       String?
+  sentiment        String?
+  keywords         String
+  leadScore        Int?
+  agentPerformance Json?
+  cost             Float     @default(0.0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  campaign         Campaign  @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+  @@index([agentId])
+  @@index([callStartTime])
+}
+
+model SystemMetrics {
+  id              String   @id @default(cuid())
+  date            DateTime @unique
+  totalCalls      Int      @default(0)
+  answeredCalls   Int      @default(0)
+  conversionRate  Float    @default(0.0)
+  averageDuration Float    @default(0.0)
+  totalCost       Float    @default(0.0)
+  activeAgents    Int      @default(0)
+  activeCampaigns Int      @default(0)
+  systemUptime    Float    @default(100.0)
+  errorRate       Float    @default(0.0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([date])
+}
+
+model LocalAgent {
+  id              String   @id @default(cuid())
+  agentId         String   @unique
+  name            String
+  description     String?
+  model           String
+  voice           String
+  temperature     Float
+  prompt          String
+  status          String   @default("RUNNING")
+  lastHeartbeat   DateTime @default(now())
+  processId       String?
+  port            Int?
+  host            String   @default("localhost")
+  deploymentMode  String   @default("local")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([agentId])
+  @@index([lastHeartbeat])
+  @@index([status])
+}

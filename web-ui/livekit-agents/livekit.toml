@@ -1,0 +1,6 @@
+[project]
+subdomain = "firstproject-ly6tfhj5"
+
+[agent]
+runtime = "node"
+entry_point = "dist/agent.js"

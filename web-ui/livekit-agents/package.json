@@ -1,0 +1,23 @@
+{
+  "name": "sip-ai-agents",
+  "version": "1.0.0",
+  "description": "SIP AI Agents for LiveKit Cloud deployment",
+  "main": "dist/agent.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/agent.js",
+    "dev": "tsx src/agent.ts",
+    "download-files": "echo 'No files to download'"
+  },
+  "dependencies": {
+    "@livekit/agents": "^0.1.0",
+    "livekit-client": "^2.0.0",
+    "livekit-server-sdk": "^2.13.3",
+    "openai": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
