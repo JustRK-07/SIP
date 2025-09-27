@@ -12,6 +12,7 @@ import {
   AiOutlineRobot,
   AiOutlineMenu,
   AiOutlineClose,
+  AiOutlineApi,
 } from "react-icons/ai";
 
 function Navigation() {
@@ -84,9 +85,14 @@ function Navigation() {
       label: "Lead Lists",
     },
     {
-      href: "/number-management",
+      href: "/phone-numbers",
       icon: AiOutlinePhone,
-      label: "Number Management",
+      label: "Phone Numbers",
+    },
+    {
+      href: "/trunks",
+      icon: AiOutlineApi,
+      label: "Trunks",
     },
     {
       href: "/agents",
@@ -96,6 +102,11 @@ function Navigation() {
   ];
 
   const adminItems = [
+    {
+      href: "/tenants",
+      icon: AiOutlineUser,
+      label: "Tenants",
+    },
     {
       href: "/settings",
       icon: AiOutlineSetting,

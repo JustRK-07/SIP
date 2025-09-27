@@ -55,6 +55,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
 }));
 
 // Import routes
+const authRoutes = require('./routes/auth');
 const tenantRoutes = require('./routes/tenants');
 const phoneNumberRoutes = require('./routes/phoneNumbers');
 const campaignRoutes = require('./routes/campaigns');
@@ -62,6 +63,7 @@ const platformTrunkRoutes = require('./routes/platformTrunks');
 const livekitTrunkRoutes = require('./routes/livekitTrunks');
 
 // Use routes
+app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/tenants', phoneNumberRoutes);
 app.use('/api/tenants', campaignRoutes);

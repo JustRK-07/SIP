@@ -86,7 +86,8 @@ const generatePlatformTrunkId = () => {
  *       500:
  *         description: Internal server error
  */
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', async (req, res) => {
+  // Make authentication optional for platform trunks listing
   try {
     // Build paginated query using PaginationService
     const queryOptions = PaginationService.buildPaginatedQuery({
@@ -103,9 +104,11 @@ router.get('/', authenticateToken, async (req, res) => {
         id: true,
         name: true,
         description: true,
-        twilioRegion: true,
+        sipAddress: true,
+        twilioTrunkSid: true,
+        status: true,
+        tenantId: true,
         isActive: true,
-        maxChannels: true,
         createdAt: true,
         updatedAt: true,
         _count: {

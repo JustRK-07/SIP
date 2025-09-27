@@ -33,9 +33,10 @@ model CsvData {
 
 model Campaign {
   id              String          @id @default(cuid())
-  name            String          @unique
+  name            String
   description     String?
   status          String          @default("DRAFT")
+  campaignType    String          @default("INBOUND")
   script          String?
   totalLeads      Int             @default(0)
   callsMade       Int             @default(0)
@@ -43,13 +44,21 @@ model Campaign {
   conversionRate  Float           @default(0.0)
   averageDuration Float           @default(0.0)
   totalCost       Float           @default(0.0)
+  tenantId        String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+  tenant          Tenant?         @relation(fields: [tenantId], references: [id])
   analytics       CallAnalytics[]
   agents          CampaignAgent[]
   conversations   Conversation[]
   leads           Lead[]
   assignedLeadLists LeadList[]    @relation("LeadListCampaigns")
+  phoneNumbers    PhoneNumber[]
+  livekitTrunks   LiveKitTrunk[]
+  dispatchRules   DispatchRule[]
+
+  @@unique([name, tenantId])
+  @@index([tenantId])
 }
 
 model LeadList {
@@ -121,13 +130,19 @@ model PhoneNumber {
   assignedAgentId String?  @unique
   callDirection   String   @default("BOTH")
   webhookUrl      String?
+  tenantId        String?
+  campaignId      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   assignedAgent   Agent?
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id])
+  campaign        Campaign? @relation(fields: [campaignId], references: [id])
 
   @@index([status])
   @@index([assignedAgentId])
   @@index([callDirection])
+  @@index([tenantId])
+  @@index([campaignId])
 }
 
 model Agent {
@@ -234,5 +249,134 @@ model Tenant {
   address      String?
   maxUsers     Int?     @default(100)
 
+  users        User[]
+  campaigns    Campaign[]
+  phoneNumbers PhoneNumber[]
+  livekitTrunks LiveKitTrunk[]
+  platformTrunks PlatformTrunk[]
+  dispatchRules DispatchRule[]
+
   @@map("tenants")
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  username     String?        @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  isActive     Boolean        @default(true)
+  permissions  BigInt[]       @default([])
+  lastLoginAt  DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  tenantId     String?
+  tenant       Tenant?        @relation(fields: [tenantId], references: [id])
+  refreshTokens RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([email])
+  @@index([username])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isActive  Boolean  @default(true)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([token])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model LiveKitTrunk {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  trunkType         String   @default("INBOUND")
+  livekitTrunkId    String?  @unique
+  status            String   @default("PENDING")
+  tenantId          String?
+  platformTrunkId   String?
+  campaignId        String?
+  maxConcurrentCalls Int     @default(10)
+  codecPreferences  String[]
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant?  @relation(fields: [tenantId], references: [id])
+  platformTrunk     PlatformTrunk? @relation(fields: [platformTrunkId], references: [id])
+  campaign          Campaign? @relation(fields: [campaignId], references: [id])
+  dispatchRules     DispatchRule[]
+
+  @@index([tenantId])
+  @@index([campaignId])
+  @@map("livekit_trunks")
+}
+
+model PlatformTrunk {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  sipAddress        String?
+  twilioTrunkSid    String?  @unique
+  status            String   @default("ACTIVE")
+  tenantId          String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant?  @relation(fields: [tenantId], references: [id])
+  livekitTrunks     LiveKitTrunk[]
+
+  @@index([tenantId])
+  @@map("platform_trunks")
+}
+
+model DispatchRule {
+  id                    String   @id @default(cuid())
+  name                  String
+  agentName             String?
+  livekitDispatchRuleId String?  @unique
+  ruleType              String   @default("direct")
+  roomName              String?
+  status                String   @default("ACTIVE")
+  tenantId              String?
+  campaignId            String?
+  livekitTrunkId        String?
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant                Tenant?  @relation(fields: [tenantId], references: [id])
+  campaign              Campaign? @relation(fields: [campaignId], references: [id])
+  livekitTrunk          LiveKitTrunk? @relation(fields: [livekitTrunkId], references: [id])
+
+  @@index([tenantId])
+  @@index([campaignId])
+  @@map("dispatch_rules")
 }

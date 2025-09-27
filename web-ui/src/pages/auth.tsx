@@ -12,14 +12,16 @@ export default function Auth() {
   const router = useRouter();
   const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [credentials, setCredentials] = useState({
-    username: "admin",
-    password: "admin123"
+    username: "",
+    password: ""
   });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrorMessage("");
 
     try {
       const success = await login(credentials.username, credentials.password);
@@ -27,10 +29,12 @@ export default function Auth() {
         toast.success("Login successful!");
         await router.push("/");
       } else {
+        setErrorMessage("Invalid username or password");
         toast.error("Invalid credentials");
       }
     } catch (error) {
-      toast.error("Login failed");
+      setErrorMessage("Unable to connect to server. Please try again.");
+      toast.error("Login failed - Check your connection");
     } finally {
       setIsLoading(false);
     }
@@ -116,10 +120,16 @@ export default function Auth() {
                   </div>
                 </div>
 
+                {errorMessage && (
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                    <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
+                  </div>
+                )}
+
                 <Button
                   type="submit"
-                  disabled={isLoading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors"
+                  disabled={isLoading || !credentials.username || !credentials.password}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? (
                     <AiOutlineLoading3Quarters className="h-5 w-5 animate-spin mx-auto" />
@@ -130,10 +140,10 @@ export default function Auth() {
 
                 <div className="pt-4 text-center border-t border-slate-200 dark:border-slate-700/50">
                   <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Demo Credentials
+                    Test Credentials
                   </p>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Username: admin | Password: admin123
+                    Username: qateam@ytel.com | Password: [Check gobi-main .env]
                   </p>
                 </div>
               </form>
