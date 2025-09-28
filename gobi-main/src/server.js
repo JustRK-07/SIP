@@ -62,6 +62,7 @@ const campaignRoutes = require('./routes/campaigns');
 const platformTrunkRoutes = require('./routes/platformTrunks');
 const livekitTrunkRoutes = require('./routes/livekitTrunks');
 const agentRoutes = require('./routes/agents');
+const leadListRoutes = require('./routes/leadLists');
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -71,6 +72,7 @@ app.use('/api/tenants', campaignRoutes);
 app.use('/api/platform-trunks', platformTrunkRoutes);
 app.use('/api/livekit-trunks', livekitTrunkRoutes);
 app.use('/api/agents', agentRoutes);
+app.use('/api/lead-lists', leadListRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

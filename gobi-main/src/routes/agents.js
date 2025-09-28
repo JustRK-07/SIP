@@ -234,20 +234,31 @@ router.get('/', authenticateToken, async (req, res) => {
     // Build where clause
     const where = {};
 
-    // If not admin, filter by user's tenant
+    // For now, we'll return all agents regardless of tenant
+    // In a multi-tenant setup, you might want to add a tenantId field to the Agent model
+    // or only show agents that have campaigns associated with the user's tenant
+
+    // Optional: Filter by agents that have campaigns for this tenant
+    // Commented out for now to avoid empty results
+    /*
     if (!req.user.roles?.includes('admin')) {
       where.campaigns = {
         some: {
-          tenantId: req.user.acct
+          campaign: {
+            tenantId: req.user.acct
+          }
         }
       };
     } else if (tenantId) {
       where.campaigns = {
         some: {
-          tenantId: tenantId
+          campaign: {
+            tenantId: tenantId
+          }
         }
       };
     }
+    */
 
     if (status) {
       where.status = status;

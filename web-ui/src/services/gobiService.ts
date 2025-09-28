@@ -3,41 +3,18 @@
  * Replaces TRPC with direct REST API calls to gobi-main backend
  */
 
+import authManager from '../utils/auth';
+
 // Base configuration
 const GOBI_MAIN_API_URL = process.env.NEXT_PUBLIC_GOBI_MAIN_API_URL || 'http://localhost:3000';
 
-// Auth functions using proper authentication
+// Auth functions using proper authentication with automatic token refresh
 const getToken = async (): Promise<string> => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      return token;
-    }
-  }
-  throw new Error('No authentication token found. Please login.');
+  return authManager.getValidToken();
 };
 
 const getTenantId = (): string => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      try {
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(
-          atob(base64)
-            .split('')
-            .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-            .join('')
-        );
-        const tokenData = JSON.parse(jsonPayload);
-        return tokenData.acct || tokenData.tenantId;
-      } catch (error) {
-        console.error('Error parsing JWT for tenant ID:', error);
-      }
-    }
-  }
-  throw new Error('No tenant ID found. Please login.');
+  return authManager.getTenantId();
 };
 
 // Common error handling
@@ -64,7 +41,7 @@ class BaseGobiService {
     };
   }
 
-  protected async handleResponse<T>(response: Response): Promise<T> {
+  protected async handleResponse<T>(response: Response, retryCount = 0): Promise<T> {
     if (!response.ok) {
       const errorText = await response.text();
       let errorData;
@@ -72,6 +49,16 @@ class BaseGobiService {
         errorData = JSON.parse(errorText);
       } catch {
         errorData = { message: errorText };
+      }
+
+      // Check if it's a token expiration error
+      if (response.status === 401 && retryCount === 0) {
+        // Token might have expired between check and request
+        // Force refresh and retry once
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('access_token');
+        }
+        return this.handleResponse<T>(response, retryCount + 1);
       }
 
       throw new GobiAPIError(

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import authManager from "../utils/auth";
 
 // Gobi-main API configuration
 const GOBI_API_URL = process.env.NEXT_PUBLIC_GOBI_API_URL || 'http://localhost:3000';
@@ -12,7 +13,7 @@ interface AuthContextType {
   username: string | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
-  getAuthHeaders: () => HeadersInit;
+  getAuthHeaders: () => Promise<HeadersInit>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -23,7 +24,7 @@ const AuthContext = createContext<AuthContextType>({
   username: null,
   login: async () => false,
   logout: () => {},
-  getAuthHeaders: () => ({}),
+  getAuthHeaders: async () => ({}),
 });
 
 // Helper function to parse JWT
@@ -115,8 +116,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setTokens = (data: any) => {
-    localStorage.setItem('access_token', data.accessToken);
-    localStorage.setItem('refresh_token', data.refreshToken);
+    // Use authManager to store tokens
+    authManager.storeTokens(data.accessToken, data.refreshToken);
 
     const tokenData = parseJwt(data.accessToken);
     if (tokenData) {
@@ -128,8 +129,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const clearTokens = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    // Use authManager to clear tokens
+    authManager.clearTokens();
     setAccessToken(null);
     setTenantId(null);
     setUsername(null);
@@ -183,11 +184,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/auth");
   };
 
-  const getAuthHeaders = (): HeadersInit => {
-    return {
-      'Authorization': accessToken ? `Bearer ${accessToken}` : '',
-      'Content-Type': 'application/json',
-    };
+  const getAuthHeaders = async (): Promise<HeadersInit> => {
+    // Use authManager to get valid token (with auto-refresh)
+    try {
+      const validToken = await authManager.getValidToken();
+      return {
+        'Authorization': `Bearer ${validToken}`,
+        'Content-Type': 'application/json',
+      };
+    } catch {
+      return {
+        'Content-Type': 'application/json',
+      };
+    }
   };
 
   if (isLoading) {
