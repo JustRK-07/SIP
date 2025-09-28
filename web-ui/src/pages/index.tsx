@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Head from "next/head";
-import { api } from "@/utils/api";
+import { gobiService } from "@/services/gobiService";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,71 +31,119 @@ export default function Dashboard() {
   const [purchaseCountry, setPurchaseCountry] = useState("US");
   const [purchaseAreaCode, setPurchaseAreaCode] = useState("");
 
-  // Fetch overall stats for dashboard
-  const { data: overallStats } = api.campaign.getOverallStats.useQuery(
-    undefined,
-    { 
-      refetchInterval: 10000, // Refresh every 10 seconds
-      refetchOnWindowFocus: true
+  // State for dashboard data
+  const [overallStats, setOverallStats] = useState<any>(null);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [numbersStats, setNumbersStats] = useState<any>(null);
+  const [numbers, setNumbers] = useState<any[]>([]);
+  const [agentsStats, setAgentsStats] = useState<any>(null);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+
+  // Fetch dashboard data
+  const fetchDashboardData = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Fetch all data in parallel
+      const [
+        campaignsResponse,
+        numbersResponse,
+        numbersStatsResponse,
+        agentsResponse,
+        agentsStatsResponse
+      ] = await Promise.all([
+        gobiService.campaigns.getAll(),
+        gobiService.numbers.getAll(),
+        gobiService.numbers.getStats(),
+        gobiService.agents.getAll(),
+        gobiService.agents.getStats()
+      ]);
+
+      setCampaigns(campaignsResponse?.data || []);
+      setNumbers(numbersResponse?.data || []);
+      setNumbersStats(numbersStatsResponse || {});
+      setAgents(agentsResponse?.agents || []);
+      setAgentsStats(agentsStatsResponse || {});
+
+      // Calculate overall stats
+      const campaignsData = campaignsResponse?.data || [];
+      const totalCalls = campaignsData.reduce((sum: number, campaign: any) => sum + (campaign.totalCalls || 0), 0);
+      const successfulCalls = campaignsData.reduce((sum: number, campaign: any) => sum + (campaign.successfulCalls || 0), 0);
+      const conversionRate = totalCalls > 0 ? (successfulCalls / totalCalls) * 100 : 0;
+
+      setOverallStats({
+        totalCalls,
+        successfulCalls,
+        conversionRate,
+        totalCampaigns: campaignsData.length,
+        activeCampaigns: campaignsData.filter((c: any) => c.isActive).length
+      });
+
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setIsLoading(false);
     }
-  );
+  };
 
-  // Fetch campaigns for quick management
-  const { data: campaigns } = api.campaign.getAll.useQuery();
+  useEffect(() => {
+    fetchDashboardData();
+    
+    // Auto-refresh every 10 seconds
+    const interval = setInterval(fetchDashboardData, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
-  // Fetch numbers stats and data
-  const { data: numbersStats } = api.numbers.getStats.useQuery();
-  const { data: numbers } = api.numbers.getAll.useQuery();
-
-  // Fetch agents stats and data
-  const { data: agentsStats } = api.agents.getStats.useQuery();
-  const { data: agents } = api.agents.getAll.useQuery();
-
-  // Mutations for quick actions
-  const { mutate: updateStatus } = api.campaign.updateStatus.useMutation({
-    onSuccess: () => {
+  // Quick actions
+  const handleUpdateCampaignStatus = async (campaignId: string, status: string) => {
+    try {
+      await gobiService.campaigns.update(campaignId, { isActive: status === 'ACTIVE' });
       toast.success("Campaign status updated!");
-    },
-  });
+      await fetchDashboardData();
+    } catch (error: any) {
+      toast.error(`Failed to update campaign: ${error.message}`);
+    }
+  };
 
-  // Twilio number purchase mutation
-  const { mutate: purchaseNumber, isPending: isPurchasing } = api.numbers.purchase.useMutation({
-    onSuccess: () => {
-      toast.success("Phone number purchased successfully!");
-      setShowPurchaseModal(false);
-      setPurchaseAreaCode("");
-    },
-    onError: (error) => {
-      toast.error(`Failed to purchase number: ${error.message}`);
-    },
-  });
-
-  const handlePurchaseNumber = () => {
+  const handlePurchaseNumber = async () => {
     if (!purchaseAreaCode) {
       toast.error("Please enter an area code");
       return;
     }
-    
-    // For now, we'll use a placeholder number and let the backend handle the real purchase
-    // The backend will search for available numbers and purchase one
-    purchaseNumber({
-      phoneNumber: `+1${purchaseAreaCode}0000000`, // Placeholder - backend will replace with real number
-      friendlyName: `Purchased Number ${purchaseAreaCode}`,
-      capabilities: ["voice", "sms"],
-    });
+
+    try {
+      setIsPurchasing(true);
+      const purchaseData = {
+        country: purchaseCountry,
+        areaCode: purchaseAreaCode,
+        capabilities: ['voice']
+      };
+
+      await gobiService.numbers.create(purchaseData);
+      toast.success("Phone number purchased successfully!");
+      setShowPurchaseModal(false);
+      setPurchaseAreaCode("");
+      await fetchDashboardData();
+    } catch (error: any) {
+      toast.error(`Failed to purchase number: ${error.message}`);
+    } finally {
+      setIsPurchasing(false);
+    }
   };
 
-
   const handleQuickStatusUpdate = (campaignId: string, status: "ACTIVE" | "PAUSED") => {
-    updateStatus({ id: campaignId, status });
+    handleUpdateCampaignStatus(campaignId, status);
   };
 
   // Calculate summary statistics
   const todayStats = {
     totalCalls: overallStats?.totalCalls || 0,
-    completedCalls: overallStats?.completedCalls || 0,
-    successRate: overallStats?.successRate ? (overallStats.successRate * 100).toFixed(1) : "0",
-    activeCampaigns: campaigns?.filter(c => c.status === "ACTIVE").length || 0
+    completedCalls: overallStats?.successfulCalls || 0,
+    successRate: overallStats?.conversionRate ? overallStats.conversionRate.toFixed(1) : "0",
+    activeCampaigns: campaigns?.filter(c => c.isActive).length || 0
   };
 
   return (
@@ -128,9 +176,81 @@ export default function Dashboard() {
 
         {/* Real-time Stats Overview */}
         <div className="mb-8">
-          <RealTimeDashboard />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Total Calls Today */}
+            <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-blue-800">Total Calls Today</CardTitle>
+                <Phone className="h-4 w-4 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-900">
+                  {isLoading ? "..." : todayStats.totalCalls.toLocaleString()}
+                </div>
+                <div className="flex items-center mt-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2"></div>
+                  <p className="text-xs text-blue-700">Live tracking</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Successful Calls */}
+            <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-green-800">Successful Calls</CardTitle>
+                <Zap className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-900">
+                  {isLoading ? "..." : todayStats.completedCalls.toLocaleString()}
+                </div>
+                <div className="flex items-center mt-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
+                  <p className="text-xs text-green-700">{todayStats.successRate}% success rate</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Active Campaigns */}
+            <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-purple-800">Active Campaigns</CardTitle>
+                <BarChart3 className="h-4 w-4 text-purple-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-purple-900">
+                  {isLoading ? "..." : todayStats.activeCampaigns}
+                </div>
+                <div className="flex items-center mt-2">
+                  <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse mr-2"></div>
+                  <p className="text-xs text-purple-700">Running now</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Live Agents */}
+            <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-orange-800">Live Agents</CardTitle>
+                <AiOutlineRobot className="h-4 w-4 text-orange-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-900">
+                  {isLoading ? "..." : (agentsStats?.activeAgents || 0)}
+                </div>
+                <div className="flex items-center mt-2">
+                  <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse mr-2"></div>
+                  <p className="text-xs text-orange-700">AI agents online</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
+        {/* Real-time Dashboard Component */}
+        <div className="mb-8">
+          <RealTimeDashboard />
+        </div>
 
         {/* Main Dashboard Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -164,7 +284,7 @@ export default function Dashboard() {
                         }`}></div>
                         <div>
                           <h4 className="font-medium text-gray-900">{agent.name}</h4>
-                          <p className="text-sm text-gray-500">{agent.model} • {agent.voice} • {agent._count.conversations} calls</p>
+                          <p className="text-sm text-gray-500">{agent.model} • {agent.voice} • {agent.totalConversations || 0} calls</p>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">

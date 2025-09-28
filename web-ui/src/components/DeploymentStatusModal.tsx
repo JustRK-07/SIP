@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { api } from "@/utils/api";
+import { gobiService, type Agent } from "@/services/gobiService";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -53,48 +53,65 @@ export default function DeploymentStatusModal({ agent, onClose }: DeploymentStat
     }
   }, [agent.status, deploymentStartTime]);
 
-  // Get LiveKit status for the agent
-  const { data: livekitStatus, refetch: refetchStatus } = api.livekitSync.getAgentLiveKitStatus.useQuery(
-    { agentId: agent.id },
-    { 
-      refetchInterval: refreshInterval,
-      refetchOnWindowFocus: true
-    }
-  );
+  // State for data from APIs
+  const [livekitStatus, setLivekitStatus] = useState<any>(null);
+  const [agentDetails, setAgentDetails] = useState<Agent | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Fetch current agent details
-  const { data: agentDetails } = api.agents.getById.useQuery(
-    { id: agent.id },
-    { 
-      refetchInterval: refreshInterval,
-      refetchOnWindowFocus: true
+  // Fetch data function
+  const fetchData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const [statusResponse, detailsResponse] = await Promise.all([
+        gobiService.agents.getLiveKitStatus(agent.id).catch(() => null),
+        gobiService.agents.getById(agent.id).catch(() => null)
+      ]);
+      setLivekitStatus(statusResponse);
+      setAgentDetails(detailsResponse);
+    } catch (error) {
+      console.error('Error fetching agent data:', error);
+    } finally {
+      setIsLoading(false);
     }
-  );
+  }, [agent.id]);
 
-  // Mutations for retry and cancel
-  const deployAgentMutation = api.agents.deploy.useMutation({
-    onSuccess: () => {
+  // Auto-refresh effect
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, refreshInterval);
+    return () => clearInterval(interval);
+  }, [fetchData, refreshInterval]);
+
+  // Manual refetch function
+  const refetchStatus = () => {
+    fetchData();
+  };
+
+  // Async functions for mutations
+  const deployAgent = async () => {
+    try {
+      await gobiService.agents.deploy(agent.id, {});
       setIsRetrying(false);
       console.log("Agent deployment restarted");
-    },
-    onError: (error) => {
+      fetchData(); // Refresh data
+    } catch (error: any) {
       setIsRetrying(false);
       console.error("Retry failed:", error.message);
-    },
-  });
+    }
+  };
 
-  const stopAgentMutation = api.agents.stop.useMutation({
-    onSuccess: () => {
+  const stopAgent = async () => {
+    try {
+      await gobiService.agents.stop(agent.id);
       setIsCancelling(false);
       setDeploymentStartTime(null);
       console.log("Agent stopped successfully");
       onClose();
-    },
-    onError: (error) => {
+    } catch (error: any) {
       setIsCancelling(false);
       console.error("Stop failed:", error.message);
-    },
-  });
+    }
+  };
 
   // Fetch deployment logs from API
   const fetchLogs = useCallback(async () => {
@@ -210,14 +227,14 @@ export default function DeploymentStatusModal({ agent, onClose }: DeploymentStat
   const handleRetryDeployment = () => {
     setIsRetrying(true);
     setDeploymentStartTime(new Date());
-    setLogs([]); // Clear logs for new deployment
-    deployAgentMutation.mutate({ id: agent.id });
+    setDeploymentLogs([]); // Clear logs for new deployment
+    deployAgent();
   };
 
   // Cancel deployment
   const handleCancelDeployment = () => {
     setIsCancelling(true);
-    stopAgentMutation.mutate({ id: agent.id });
+    stopAgent();
   };
 
   const getDeploymentSteps = () => {

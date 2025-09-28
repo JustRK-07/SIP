@@ -720,7 +720,7 @@ export default function AgentManagementContent() {
                           </span>
                         )}
                         <span className="text-xs text-gray-500">
-                          {agent._count?.conversations || 0} calls
+                          {agent.totalConversations || 0} calls
                         </span>
                       </div>
                     </div>

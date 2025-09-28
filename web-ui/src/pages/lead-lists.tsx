@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api } from "@/utils/api";
+import { useState, useEffect } from "react";
+import { gobiService, type LeadList as LeadListType } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,19 +51,8 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
-type LeadList = {
-  id: string;
-  name: string;
-  description?: string;
-  totalLeads: number;
-  processedLeads: number;
-  createdAt: Date;
-  updatedAt: Date;
-  assignedCampaigns: {
-    id: string;
-    name: string;
-  }[];
-};
+// Using LeadList type from gobiService
+type LeadList = LeadListType;
 
 type Lead = {
   id: string;
@@ -88,107 +77,158 @@ export default function LeadLists() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // Queries
-  const { data: leadLists, refetch: refetchLists, isLoading } = api.leadList.getAll.useQuery();
-  const { data: campaigns } = api.campaign.getAll.useQuery();
-  
-  const { data: listDetails, refetch: refetchDetails } = api.leadList.getDetails.useQuery(
-    { id: selectedList! },
-    { enabled: !!selectedList && viewDialogOpen }
-  );
+  // State for API calls
+  const [leadLists, setLeadLists] = useState<LeadList[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [listDetails, setListDetails] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  // Mutations
-  const { mutate: createList, isPending: isCreating } = api.leadList.create.useMutation({
-    onSuccess: () => {
-      toast.success("Lead list created successfully!");
-      setNewListName("");
-      setNewListDescription("");
-      setCreateDialogOpen(false);
-      void refetchLists();
-    },
-    onError: (error) => {
-      toast.error(`Failed to create list: ${error.message}`);
-    },
-  });
+  // Fetch data on component mount
+  useEffect(() => {
+    fetchLeadLists();
+    fetchCampaigns();
+  }, []);
 
-  const { mutate: uploadLeads, isPending: isUploading } = api.leadList.uploadLeads.useMutation({
-    onSuccess: (data) => {
-      toast.success(`Successfully uploaded ${data.count} leads!`);
-      setCsvFile(null);
-      setUploadDialogOpen(false);
-      setSelectedList(null);
-      void refetchLists();
-    },
-    onError: (error) => {
-      toast.error(`Failed to upload leads: ${error.message}`);
-    },
-  });
+  // Fetch list details when dialog opens
+  useEffect(() => {
+    if (selectedList && viewDialogOpen) {
+      fetchListDetails(selectedList);
+    }
+  }, [selectedList, viewDialogOpen]);
 
-  const { mutate: deleteList, isPending: isDeleting } = api.leadList.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Lead list deleted successfully!");
-      void refetchLists();
-    },
-    onError: (error) => {
-      toast.error(`Failed to delete list: ${error.message}`);
-    },
-  });
+  const fetchLeadLists = async () => {
+    try {
+      setIsLoading(true);
+      const response = await gobiService.leadLists.getAll();
+      // Ensure leadLists is always an array
+      setLeadLists(Array.isArray(response) ? response : []);
+    } catch (error: any) {
+      console.error('Error fetching lead lists:', error);
+      toast.error('Failed to fetch lead lists');
+      setLeadLists([]); // Set empty array on error
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const handleCreateList = () => {
+  const fetchCampaigns = async () => {
+    try {
+      const response = await gobiService.campaigns.getAll();
+      setCampaigns(response.data || []);
+    } catch (error: any) {
+      console.error('Error fetching campaigns:', error);
+    }
+  };
+
+  const fetchListDetails = async (listId: string) => {
+    try {
+      const response = await gobiService.leadLists.getDetails(listId);
+      setListDetails(response);
+    } catch (error: any) {
+      console.error('Error fetching list details:', error);
+      toast.error('Failed to fetch list details');
+    }
+  };
+
+  const handleCreateList = async () => {
     if (!newListName.trim()) {
       toast.error("Please enter a list name");
       return;
     }
-    createList({
-      name: newListName,
-      description: newListDescription || undefined,
-    });
+
+    setIsCreating(true);
+    try {
+      await gobiService.leadLists.create({
+        name: newListName,
+        description: newListDescription || undefined,
+      });
+      toast.success("Lead list created successfully!");
+      setNewListName("");
+      setNewListDescription("");
+      setCreateDialogOpen(false);
+      await fetchLeadLists();
+    } catch (error: any) {
+      toast.error(`Failed to create list: ${error.message}`);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const handleUploadCSV = () => {
+  const handleUploadCSV = async () => {
     if (!csvFile || !selectedList) {
       toast.error("Please select a file and list");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const csvContent = e.target?.result as string;
-      uploadLeads({
-        listId: selectedList,
-        csvContent,
+    setIsUploading(true);
+    try {
+      const reader = new FileReader();
+      const csvContent = await new Promise<string>((resolve, reject) => {
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = reject;
+        reader.readAsText(csvFile);
       });
-    };
-    reader.readAsText(csvFile);
-  };
 
-  const handleDeleteList = (id: string) => {
-    if (confirm("Are you sure you want to delete this lead list?")) {
-      deleteList({ id });
+      const response = await gobiService.leadLists.uploadLeads({
+        listId: selectedList,
+        content: csvContent,
+      });
+
+      toast.success(`Successfully uploaded leads!`);
+      setCsvFile(null);
+      setUploadDialogOpen(false);
+      setSelectedList(null);
+      await fetchLeadLists();
+    } catch (error: any) {
+      toast.error(`Failed to upload leads: ${error.message}`);
+    } finally {
+      setIsUploading(false);
     }
   };
 
-  // Stats calculations
-  const totalLists = leadLists?.length || 0;
-  const totalLeads = leadLists?.reduce((sum, list) => sum + list.totalLeads, 0) || 0;
-  const processedLeads = leadLists?.reduce((sum, list) => sum + list.processedLeads, 0) || 0;
+  const handleDeleteList = async (id: string) => {
+    if (confirm("Are you sure you want to delete this lead list?")) {
+      setIsDeleting(true);
+      try {
+        // Note: deleteList method needs to be implemented in gobiService
+        // For now, we'll show a message that this feature is not yet implemented
+        toast.error("Delete functionality needs to be implemented in gobi-main API");
+      } catch (error: any) {
+        toast.error(`Failed to delete list: ${error.message}`);
+      } finally {
+        setIsDeleting(false);
+      }
+    }
+  };
+
+  // Stats calculations with defensive checks
+  const totalLists = Array.isArray(leadLists) ? leadLists.length : 0;
+  const totalLeads = Array.isArray(leadLists)
+    ? leadLists.reduce((sum, list) => sum + (list._count?.leads || 0), 0)
+    : 0;
+  const processedLeads = 0; // This would need to be calculated from lead status in gobi-main
   const pendingLeads = totalLeads - processedLeads;
 
-  // Filter lists
-  const filteredLists = leadLists?.filter((list) => {
-    const matchesSearch = list.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         list.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    if (statusFilter === "ALL") return matchesSearch;
-    if (statusFilter === "ACTIVE") return matchesSearch && list.assignedCampaigns.length > 0;
-    if (statusFilter === "INACTIVE") return matchesSearch && list.assignedCampaigns.length === 0;
-    return matchesSearch;
-  });
+  // Filter lists with defensive array check
+  const filteredLists = Array.isArray(leadLists)
+    ? leadLists.filter((list) => {
+        const matchesSearch = list.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                             list.description?.toLowerCase().includes(searchTerm.toLowerCase());
+        if (statusFilter === "ALL") return matchesSearch;
+        if (statusFilter === "ACTIVE") return matchesSearch && (list.assignedCampaigns?.length || 0) > 0;
+        if (statusFilter === "INACTIVE") return matchesSearch && (list.assignedCampaigns?.length || 0) === 0;
+        return matchesSearch;
+      })
+    : [];
 
-  // Pagination
-  const totalPages = Math.ceil((filteredLists?.length || 0) / itemsPerPage);
+  // Pagination with defensive checks
+  const totalPages = Math.ceil((filteredLists.length || 0) / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedLists = filteredLists?.slice(startIndex, endIndex);
+  const paginatedLists = filteredLists.slice(startIndex, endIndex);
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 lg:p-6">
@@ -203,7 +243,7 @@ export default function LeadLists() {
             <Button 
               variant="outline" 
               size="sm"
-              onClick={() => refetchLists()}
+              onClick={() => fetchLeadLists()}
             >
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
@@ -380,27 +420,27 @@ export default function LeadLists() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Users className="h-3 w-3 text-gray-400" />
-                            <span className="text-sm font-medium">{list.totalLeads}</span>
+                            <span className="text-sm font-medium">{list._count?.leads || 0}</span>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <div className="w-24 bg-gray-200 rounded-full h-2">
-                              <div 
+                              <div
                                 className="bg-green-500 h-2 rounded-full"
-                                style={{ width: `${list.totalLeads > 0 ? (list.processedLeads / list.totalLeads) * 100 : 0}%` }}
+                                style={{ width: `0%` }}
                               />
                             </div>
                             <span className="text-xs text-gray-600">
-                              {list.processedLeads}/{list.totalLeads}
+                              0/{list._count?.leads || 0}
                             </span>
                           </div>
                         </TableCell>
                         <TableCell>
-                          {list.assignedCampaigns.length > 0 ? (
+                          {(list.assignedCampaigns?.length || 0) > 0 ? (
                             <Badge variant="secondary" className="gap-1">
                               <Link className="h-3 w-3" />
-                              {list.assignedCampaigns.length}
+                              {list.assignedCampaigns?.length || 0}
                             </Badge>
                           ) : (
                             <span className="text-gray-400 text-sm">—</span>

@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { api } from "@/utils/api";
-import campaignService from "@/services/campaignService";
-import type { Campaign as GobiCampaign, PhoneNumber, CreateCampaignData } from "@/services/campaignService";
+import { gobiService } from "@/services/gobiService";
+import type { Campaign as GobiCampaign, PhoneNumber, CreateCampaignData } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -90,14 +89,14 @@ export default function Campaigns() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
 
-  // Keep tRPC for lead lists (not in gobi-main)
-  const { data: leadLists } = api.leadList.getAll.useQuery();
+  // Gobi-main lead lists
+  const [leadLists, setLeadLists] = useState<LeadList[]>([]);
 
   // Fetch campaigns from gobi-main
   const fetchCampaigns = async () => {
     setIsLoading(true);
     try {
-      const response = await campaignService.getCampaigns();
+      const response = await gobiService.campaigns.getAll();
       setCampaigns(response.data || []);
     } catch (error) {
       console.error('Error fetching campaigns:', error);
@@ -110,16 +109,27 @@ export default function Campaigns() {
   // Fetch phone numbers from gobi-main
   const fetchPhoneNumbers = async () => {
     try {
-      const numbers = await campaignService.getPhoneNumbers();
-      setPhoneNumbers(numbers);
+      const response = await gobiService.numbers.getAll();
+      setPhoneNumbers(response.data || []);
     } catch (error) {
       console.error('Error fetching phone numbers:', error);
+    }
+  };
+
+  // Fetch lead lists from gobi-main
+  const fetchLeadLists = async () => {
+    try {
+      const response = await gobiService.leadLists.getAll();
+      setLeadLists(response || []);
+    } catch (error) {
+      console.error('Error fetching lead lists:', error);
     }
   };
 
   useEffect(() => {
     fetchCampaigns();
     fetchPhoneNumbers();
+    fetchLeadLists();
   }, []);
 
   const handleCreateCampaign = async () => {
@@ -138,7 +148,7 @@ export default function Campaigns() {
         numberIds: selectedPhoneNumbers.length > 0 ? selectedPhoneNumbers : undefined,
       };
 
-      await campaignService.createCampaign(campaignData);
+      await gobiService.campaigns.create(campaignData);
       toast.success("Campaign created successfully with LiveKit trunk!");
 
       // Reset form
@@ -161,7 +171,7 @@ export default function Campaigns() {
 
   const handleStatusUpdate = async (campaignId: string, status: string) => {
     try {
-      await campaignService.updateCampaign(campaignId, { status });
+      await gobiService.campaigns.update(campaignId, { isActive: status === 'ACTIVE' });
       toast.success("Campaign status updated!");
       await fetchCampaigns();
     } catch (error: any) {
@@ -193,7 +203,7 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
     }
 
     try {
-      await campaignService.deleteCampaign(campaignId);
+      await gobiService.campaigns.delete(campaignId);
       toast.success(`Campaign "${campaignName}" deleted successfully!`);
       await fetchCampaigns();
     } catch (error: any) {
@@ -391,7 +401,7 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
                             <label htmlFor={list.id} className="flex-1 cursor-pointer">
                               <div className="flex items-center justify-between">
                                 <span className="font-medium text-gray-900">{list.name}</span>
-                                <span className="text-sm text-gray-500">{list._count.leads} leads</span>
+                                <span className="text-sm text-gray-500">{list.totalLeads || 0} leads</span>
                               </div>
                               {list.description && (
                                 <p className="text-sm text-gray-600">{list.description}</p>

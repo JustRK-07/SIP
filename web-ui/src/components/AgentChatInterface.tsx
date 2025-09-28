@@ -204,15 +204,15 @@ export default function AgentChatInterface({ agent, onClose }: AgentChatInterfac
       `Thanks for reaching out about "${userMessage}". As your ${agentConfig.name}, I'll do my best to assist you.`,
     ];
     
-    const randomResponse = responses[Math.floor(Math.random() * responses.length)] || responses[0];
-    
+    const randomResponse = responses[Math.floor(Math.random() * responses.length)] || responses[0] || "I'm here to help you with your request.";
+
     // Add some personality based on temperature
     if (agentConfig.temperature > 0.7) {
       return `${randomResponse} I'm feeling quite creative today! 🎨`;
     } else if (agentConfig.temperature < 0.3) {
       return `${randomResponse} I'll give you a precise and focused answer.`;
     }
-    
+
     return randomResponse;
   };
 

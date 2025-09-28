@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { api } from "@/utils/api";
+import { useState, useEffect } from "react";
+import { gobiService } from "@/services/gobiService";
+import type { PhoneNumber, AvailablePhoneNumber, CreatePhoneNumberData } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,14 +24,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { 
-  Phone, 
-  Plus, 
-  Search, 
-  Filter, 
+import {
+  Phone,
+  Plus,
+  Search,
+  Filter,
   MoreVertical,
-  CheckCircle, 
-  XCircle, 
+  CheckCircle,
+  XCircle,
   AlertCircle,
   DollarSign,
   MapPin,
@@ -47,530 +48,486 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
-interface AvailableNumber {
-  phoneNumber: string;
-  friendlyName: string;
-  capabilities: any;
-  locality: string;
-  region: string;
-  countryCode: string;
-  monthlyCost: number;
-}
-
 export default function NumberManagement() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [purchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
-  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
-  const [availableNumbers, setAvailableNumbers] = useState<AvailableNumber[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  // State management
+  const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [availableNumbers, setAvailableNumbers] = useState<AvailablePhoneNumber[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSearchingNumbers, setIsSearchingNumbers] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const [purchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
 
-  // Search form state
+  // Search and purchase forms
   const [searchForm, setSearchForm] = useState({
     country: "US",
     areaCode: "",
     contains: "",
-    limit: 10,
+    limit: 20,
   });
 
-  // Purchase form state
   const [purchaseForm, setPurchaseForm] = useState({
     phoneNumber: "",
     friendlyName: "",
     capabilities: ["voice"],
   });
 
-  // Fetch data
-  const { data: numbers, refetch: refetchNumbers, isLoading } = api.numbers.getAll.useQuery();
-  const { data: stats } = api.numbers.getStats.useQuery();
-
-  // Search available numbers query
-  const { data: searchResults, refetch: searchNumbers, isFetching: isSearchingNumbers } = api.numbers.searchAvailable.useQuery(
-    { country: searchForm.country, areaCode: searchForm.areaCode, contains: searchForm.contains, limit: searchForm.limit },
-    { enabled: false } // Only run when manually triggered
-  );
-
-  const syncFromTwilioMutation = api.numbers.syncFromTwilio.useMutation({
-    onSuccess: (data) => {
-      void refetchNumbers();
-      toast.success(data.message);
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const purchaseNumberMutation = api.numbers.purchase.useMutation({
-    onSuccess: (data) => {
-      setIsPurchasing(false);
-      setPurchaseDialogOpen(false);
-      setPurchaseForm({ phoneNumber: "", friendlyName: "", capabilities: ["voice"] });
-      void refetchNumbers();
-      toast.success(data.message);
-    },
-    onError: (error) => {
-      setIsPurchasing(false);
-      toast.error(error.message);
-    },
-  });
-
-  const assignNumberMutation = api.numbers.assignToAgent.useMutation({
-    onSuccess: (data) => {
-      void refetchNumbers();
-      toast.success(data.message);
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const releaseNumberMutation = api.numbers.releaseFromAgent.useMutation({
-    onSuccess: (data) => {
-      void refetchNumbers();
-      toast.success(data.message);
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const handleSearchNumbers = async () => {
+  // Data fetching functions
+  const fetchNumbers = async () => {
     try {
-      const result = await searchNumbers();
-      if (result.data) {
-        setAvailableNumbers(result.data.numbers);
-        toast.success(`Found ${result.data.numbers.length} available numbers`);
-      }
+      const response = await gobiService.numbers.getAll();
+      setNumbers(response.data || []);
     } catch (error) {
-      toast.error('Failed to search numbers');
+      console.error('Error fetching numbers:', error);
+      toast.error('Failed to fetch phone numbers');
     }
   };
 
-  const handlePurchaseNumber = (number: AvailableNumber) => {
-    setPurchaseForm({
-      phoneNumber: number.phoneNumber,
-      friendlyName: number.friendlyName,
-      capabilities: number.capabilities.voice ? ["voice"] : [],
-    });
-    setPurchaseDialogOpen(true);
+  const fetchStats = async () => {
+    try {
+      const statsData = await gobiService.numbers.getStats();
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
   };
 
-  const handleConfirmPurchase = () => {
+  const searchAvailableNumbers = async () => {
+    setIsSearchingNumbers(true);
+    try {
+      const response = await gobiService.numbers.getAvailable({
+        country: searchForm.country,
+        areaCode: searchForm.areaCode || undefined,
+        contains: searchForm.contains || undefined,
+        limit: searchForm.limit,
+      });
+      setAvailableNumbers(response.data || []);
+      setSearchDialogOpen(true);
+    } catch (error) {
+      console.error('Error searching numbers:', error);
+      toast.error('Failed to search available numbers');
+    } finally {
+      setIsSearchingNumbers(false);
+    }
+  };
+
+  const purchaseNumber = async () => {
+    if (!purchaseForm.phoneNumber) {
+      toast.error('Please enter a phone number');
+      return;
+    }
+
     setIsPurchasing(true);
-    purchaseNumberMutation.mutate(purchaseForm);
-  };
+    try {
+      const data: CreatePhoneNumberData = {
+        number: purchaseForm.phoneNumber,
+        label: purchaseForm.friendlyName || undefined,
+        type: 'LOCAL', // Default type
+        provider: 'TWILIO',
+      };
 
-  const handleAssignNumber = (phoneNumberId: string) => {
-    // TODO: Open agent selection dialog
-    toast.success("Agent selection dialog coming soon");
-  };
-
-  const handleReleaseNumber = (phoneNumberId: string) => {
-    if (confirm("Are you sure you want to release this number?")) {
-      releaseNumberMutation.mutate({ phoneNumberId });
+      await gobiService.numbers.create(data);
+      toast.success('Phone number purchased successfully!');
+      setPurchaseDialogOpen(false);
+      setPurchaseForm({
+        phoneNumber: "",
+        friendlyName: "",
+        capabilities: ["voice"],
+      });
+      await fetchNumbers();
+      await fetchStats();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to purchase phone number');
+    } finally {
+      setIsPurchasing(false);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "AVAILABLE": return "default";
-      case "ASSIGNED": return "secondary";
-      case "SUSPENDED": return "destructive";
-      default: return "outline";
+  const assignNumber = async (numberId: string, agentId: string) => {
+    try {
+      // This would need to be implemented in governments service based on gobi-main API
+      // For now, using update to change assignment
+      await gobiService.numbers.update(numberId, { campaignId: agentId });
+      toast.success('Phone number assigned successfully!');
+      await fetchNumbers();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to assign phone number');
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "AVAILABLE": return <CheckCircle className="h-3 w-3" />;
-      case "ASSIGNED": return <AlertCircle className="h-3 w-3" />;
-      case "SUSPENDED": return <XCircle className="h-3 w-3" />;
-      default: return <XCircle className="h-3 w-3" />;
+  const releaseNumber = async (numberId: string) => {
+    try {
+      await gobiService.numbers.update(numberId, { campaignId: undefined });
+      toast.success('Phone number released successfully!');
+      await fetchNumbers();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to release phone number');
     }
   };
 
-  const filteredNumbers = numbers?.filter((number) => {
-    const matchesSearch = number.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         number.friendlyName?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "ALL" || number.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const deleteNumber = async (numberId: string, permanent = false) => {
+    try {
+      await gobiService.numbers.delete(numberId, permanent);
+      toast.success(`Phone number ${permanent ? 'deleted' : 'deactivated'} successfully!`);
+      await fetchNumbers();
+      await fetchStats();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete phone number');
+    }
+  };
 
-  // Pagination
-  const totalPages = Math.ceil((filteredNumbers?.length || 0) / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedNumbers = filteredNumbers?.slice(startIndex, endIndex);
+  // Load data on component mount
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      await Promise.all([fetchNumbers(), fetchStats()]);
+      setIsLoading(false);
+    };
+
+    loadData();
+  }, []);
+
+  // Format phone number display
+  const formatPhoneNumber = (number: string) => {
+    if (number.startsWith('+1')) {
+      const digits = number.slice(2);
+      return `+1 (${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
+    return number;
+  };
+
+  // Get status badge color
+  const getStatusBadge = (number: PhoneNumber) => {
+    if (!number.isActive) {
+      return <Badge variant="destructive">Inactive</Badge>;
+    }
+    if (number.campaignId) {
+      return <Badge variant="default">Assigned</Badge>;
+    }
+    return <Badge variant="secondary">Available</Badge>;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p>Loading phone numbers...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 lg:p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Number Management</h1>
-            <p className="text-sm text-gray-600 mt-1">Manage your Twilio phone numbers</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => syncFromTwilioMutation.mutate()}
-              disabled={syncFromTwilioMutation.isPending}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${syncFromTwilioMutation.isPending ? 'animate-spin' : ''}`} />
-              Sync
-            </Button>
-            <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Search className="h-4 w-4 mr-2" />
-                  Search
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Search Available Numbers</DialogTitle>
-                  <DialogDescription>
-                    Search for available phone numbers to purchase from Twilio
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="country">Country</Label>
-                    <Select value={searchForm.country} onValueChange={(value) => setSearchForm({...searchForm, country: value})}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="US">United States</SelectItem>
-                        <SelectItem value="CA">Canada</SelectItem>
-                        <SelectItem value="GB">United Kingdom</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="areaCode">Area Code (Optional)</Label>
-                    <Input
-                      id="areaCode"
-                      placeholder="e.g., 555"
-                      value={searchForm.areaCode}
-                      onChange={(e) => setSearchForm({...searchForm, areaCode: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="contains">Contains (Optional)</Label>
-                    <Input
-                      id="contains"
-                      placeholder="e.g., 123"
-                      value={searchForm.contains}
-                      onChange={(e) => setSearchForm({...searchForm, contains: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="limit">Number of Results</Label>
-                    <Select value={searchForm.limit.toString()} onValueChange={(value) => setSearchForm({...searchForm, limit: parseInt(value)})}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5</SelectItem>
-                        <SelectItem value="10">10</SelectItem>
-                        <SelectItem value="20">20</SelectItem>
-                        <SelectItem value="50">50</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button onClick={handleSearchNumbers} disabled={isSearching} className="w-full">
-                    {isSearching ? "Searching..." : "Search Numbers"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-            <Button size="sm" onClick={() => setPurchaseDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Purchase
-            </Button>
-          </div>
+    <div className="container mx-auto py-8 px-4">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold">Phone Number Management</h1>
+          <p className="text-gray-600 mt-2">Manage your phone numbers and assignments</p>
         </div>
-
-        {/* Compact Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600">Total</p>
-                  <p className="text-xl font-semibold">{stats?.totalNumbers || 0}</p>
-                </div>
-                <Phone className="h-8 w-8 text-gray-400" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600">Available</p>
-                  <p className="text-xl font-semibold text-green-600">{stats?.availableNumbers || 0}</p>
-                </div>
-                <CheckCircle className="h-8 w-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600">Assigned</p>
-                  <p className="text-xl font-semibold text-blue-600">{stats?.assignedNumbers || 0}</p>
-                </div>
-                <AlertCircle className="h-8 w-8 text-blue-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600">Monthly</p>
-                  <p className="text-xl font-semibold">${stats?.totalMonthlyCost?.toFixed(2) || "0"}</p>
-                </div>
-                <DollarSign className="h-8 w-8 text-gray-400" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Table Section */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="border-b bg-gray-50/50">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <CardTitle className="text-lg">Phone Numbers</CardTitle>
-                <CardDescription className="text-xs">
-                  Manage your purchased numbers and assignments
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <div className="relative flex-1 sm:flex-initial">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <div className="flex gap-2">
+          <Button
+            onClick={searchAvailableNumbers}
+            disabled={isSearchingNumbers}
+            variant="outline"
+          >
+            {isSearchingNumbers ? (
+              <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Search className="h-4 w-4 mr-2" />
+            )}
+            Search Available
+          </Button>
+          <Dialog open={purchaseDialogOpen} onOpenChange={setPurchaseDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Purchase Number
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Purchase Phone Number</DialogTitle>
+                <DialogDescription>
+                  Enter a phone number to purchase from Twilio
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="phoneNumber">Phone Number</Label>
                   <Input
-                    placeholder="Search numbers..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9 h-9 w-full sm:w-64"
+                    id="phoneNumber"
+                    placeholder="+15551234567"
+                    value={purchaseForm.phoneNumber}
+                    onChange={(e) =>
+                      setPurchaseForm(prev => ({ ...prev, phoneNumber: e.target.value }))
+                    }
                   />
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-32 h-9">
-                    <SelectValue placeholder="Filter" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All Status</SelectItem>
-                    <SelectItem value="AVAILABLE">Available</SelectItem>
-                    <SelectItem value="ASSIGNED">Assigned</SelectItem>
-                    <SelectItem value="SUSPENDED">Suspended</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="grid gap-2">
+                  <Label htmlFor="friendlyName">Friendly Name (Optional)</Label>
+                  <Input
+                    id="friendlyName"
+                    placeholder="e.g., Main Office Line"
+                    value={purchaseForm.friendlyName}
+                    onChange={(e) =>
+                      setPurchaseForm(prev => ({ ...prev, friendlyName: e.target.value }))
+                    }
+                  />
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
-              </div>
-            ) : filteredNumbers?.length === 0 ? (
-              <div className="text-center py-12">
-                <Phone className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">No phone numbers found</p>
-                <p className="text-sm text-gray-400 mt-1">Purchase your first number to get started</p>
-              </div>
-            ) : (
-              <>
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="w-[200px]">Number</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Assigned To</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead className="text-right">Cost</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedNumbers?.map((number) => (
-                      <TableRow key={number.id}>
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <Phone className="h-4 w-4 text-gray-400" />
-                            {number.number}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-gray-600">
-                          {number.friendlyName}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusColor(number.status)} className="gap-1">
-                            {getStatusIcon(number.status)}
-                            {number.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {number.assignedAgent ? (
-                            <div className="flex items-center gap-2">
-                              <div className="h-6 w-6 bg-blue-100 rounded-full flex items-center justify-center">
-                                <span className="text-xs font-semibold text-blue-600">
-                                  {number.assignedAgent.name.charAt(0)}
-                                </span>
-                              </div>
-                              <span className="text-sm">{number.assignedAgent.name}</span>
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 text-sm">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1 text-sm text-gray-600">
-                            <MapPin className="h-3 w-3" />
-                            {number.country}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className="text-sm font-medium">${number.monthlyCost}/mo</span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              {number.status === "AVAILABLE" && (
-                                <DropdownMenuItem onClick={() => handleAssignNumber(number.id)}>
-                                  <UserPlus className="h-4 w-4 mr-2" />
-                                  Assign to Agent
-                                </DropdownMenuItem>
-                              )}
-                              {number.status === "ASSIGNED" && (
-                                <DropdownMenuItem onClick={() => handleReleaseNumber(number.id)}>
-                                  <UserMinus className="h-4 w-4 mr-2" />
-                                  Release Number
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem>
-                                <Settings className="h-4 w-4 mr-2" />
-                                Configure
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-red-600">
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between px-4 py-3 border-t">
-                    <div className="text-sm text-gray-600">
-                      Showing {startIndex + 1} to {Math.min(endIndex, filteredNumbers?.length || 0)} of {filteredNumbers?.length || 0} results
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage(1)}
-                        disabled={currentPage === 1}
-                      >
-                        <ChevronsLeft className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage(currentPage - 1)}
-                        disabled={currentPage === 1}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <span className="text-sm px-3">
-                        Page {currentPage} of {totalPages}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage(currentPage + 1)}
-                        disabled={currentPage === totalPages}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage(totalPages)}
-                        disabled={currentPage === totalPages}
-                      >
-                        <ChevronsRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Purchase Dialog */}
-        <Dialog open={purchaseDialogOpen} onOpenChange={setPurchaseDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Purchase Phone Number</DialogTitle>
-              <DialogDescription>
-                Confirm the purchase of this phone number from Twilio
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label>Phone Number</Label>
-                <Input value={purchaseForm.phoneNumber} disabled />
-              </div>
-              <div>
-                <Label>Friendly Name</Label>
-                <Input
-                  value={purchaseForm.friendlyName}
-                  onChange={(e) => setPurchaseForm({...purchaseForm, friendlyName: e.target.value})}
-                  placeholder="Enter a friendly name for this number"
-                />
-              </div>
-              <div className="flex justify-end space-x-2">
+              <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setPurchaseDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleConfirmPurchase} disabled={isPurchasing}>
-                  {isPurchasing ? "Purchasing..." : "Purchase Number"}
+                <Button onClick={purchaseNumber} disabled={isPurchasing}>
+                  {isPurchasing ? (
+                    <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
+                  Purchase
                 </Button>
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
+
+      {/* Statistics Cards */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Numbers</CardTitle>
+              <Phone className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalNumbers || 0}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Available</CardTitle>
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.availableNumbers || 0}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Assigned</CardTitle>
+              <UserPlus className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.assignedNumbers || 0}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Inactive</CardTitle>
+              <XCircle className="h-4 w-4 text-red-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.inactiveNumbers || 0}</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Numbers Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Phone Numbers</CardTitle>
+          <CardDescription>
+            Manage your purchased phone numbers and their assignments
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Number</TableHead>
+                <TableHead>Label</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Campaign</TableHead>
+                <TableHead>Provider</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {numbers.map((number) => (
+                <TableRow key={number.id}>
+                  <TableCell className="font-medium">
+                    {formatPhoneNumber(number.number)}
+                  </TableCell>
+                  <TableCell>{number.label || '-'}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{number.type}</Badge>
+                  </TableCell>
+                  <TableCell>{getStatusBadge(number)}</TableCell>
+                  <TableCell>
+                    {number.campaign?.name || '-'}
+                  </TableCell>
+                  <TableCell>{number.provider}</TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {number.campaignId ? (
+                          <DropdownMenuItem onClick={() => releaseNumber(number.id)}>
+                            <UserMinus className="h-4 w-4 mr-2" />
+                            Release
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem disabled>
+                            <UserPlus className="h-4 w-4 mr-2" />
+                            Assign (Not implemented)
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onClick={() => deleteNumber(number.id, false)}>
+                          <Settings className="h-4 w-4 mr-2" />
+                          Deactivate
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => deleteNumber(number.id, true)}
+                          className="text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete Permanently
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Search Available Numbers Dialog */}
+      <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Available Phone Numbers</DialogTitle>
+            <DialogDescription>
+              Search and purchase available phone numbers from Twilio
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Search Form */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="country">Country</Label>
+              <Select
+                value={searchForm.country}
+                onValueChange={(value) => setSearchForm(prev => ({ ...prev, country: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="US">United States</SelectItem>
+                  <SelectItem value="CA">Canada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="areaCode">Area Code</Label>
+              <Input
+                id="areaCode"
+                placeholder="555"
+                value={searchForm.areaCode}
+                onChange={(e) => setSearchForm(prev => ({ ...prev, areaCode: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="contains">Contains</Label>
+              <Input
+                id="contains"
+                placeholder="1234"
+                value={searchForm.contains}
+                onChange={(e) => setSearchForm(prev => ({ ...prev, contains: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="limit">Limit</Label>
+              <Input
+                id="limit"
+                type="number"
+                value={searchForm.limit}
+                onChange={(e) => setSearchForm(prev => ({ ...prev, limit: parseInt(e.target.value) || 20 }))}
+              />
+            </div>
+          </div>
+
+          <Button onClick={searchAvailableNumbers} disabled={isSearchingNumbers} className="mb-4">
+            {isSearchingNumbers ? (
+              <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Search className="h-4 w-4 mr-2" />
+            )}
+            Search Numbers
+          </Button>
+
+          {/* Available Numbers Table */}
+          <div className="max-h-96 overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Number</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>Capabilities</TableHead>
+                  <TableHead>Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {availableNumbers.map((number, index) => (
+                  <TableRow key={index}>
+                    <TableCell className="font-medium">
+                      {formatPhoneNumber(number.phoneNumber)}
+                    </TableCell>
+                    <TableCell>
+                      {number.locality}, {number.region}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {number.capabilities.voice && <Badge variant="outline">Voice</Badge>}
+                        {number.capabilities.sms && <Badge variant="outline">SMS</Badge>}
+                        {number.capabilities.mms && <Badge variant="outline">MMS</Badge>}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setPurchaseForm(prev => ({
+                            ...prev,
+                            phoneNumber: number.phoneNumber,
+                            friendlyName: number.friendlyName || ''
+                          }));
+                          setSearchDialogOpen(false);
+                          setPurchaseDialogOpen(true);
+                        }}
+                      >
+                        Purchase
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

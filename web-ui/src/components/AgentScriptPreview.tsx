@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { api } from "@/utils/api";
+// import { api } from "@/utils/api"; // Removed tRPC dependency
 import { Loader2, FileCode, Download, Copy, Check, Rocket, Sun, Moon, Edit3, Save } from "lucide-react";
 
 interface AgentScriptPreviewProps {

@@ -1,15 +1,34 @@
 import { useState, useEffect } from "react";
-import { api } from "@/utils/api";
+import { gobiService } from "@/services/gobiService";
 import { AiOutlineRobot, AiOutlineCheckCircle, AiOutlineWarning, AiOutlineLoading3Quarters, AiOutlineApi, AiOutlineCode } from "react-icons/ai";
 
 export function AgentStatus() {
-  const { data: agentStatus, isLoading, refetch } = api.campaign.getAgentStatus.useQuery(
-    undefined,
-    {
-      refetchInterval: 30000, // Check every 30 seconds
-      refetchOnWindowFocus: true,
+  const [agentStatus, setAgentStatus] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchAgentStatus = async () => {
+    try {
+      setIsLoading(true);
+      const response = await gobiService.agents.getStats();
+      setAgentStatus({
+        status: response.activeAgents > 0 ? 'active' : 'inactive',
+        connected: response.activeAgents > 0,
+        activeAgents: response.activeAgents,
+        totalAgents: response.totalAgents
+      });
+    } catch (error) {
+      console.error('Error fetching agent status:', error);
+      setAgentStatus({ status: 'error', connected: false });
+    } finally {
+      setIsLoading(false);
     }
-  );
+  };
+
+  useEffect(() => {
+    fetchAgentStatus();
+    const interval = setInterval(fetchAgentStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const getStatusIcon = () => {
     if (isLoading) {

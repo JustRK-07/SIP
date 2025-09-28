@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api } from "@/utils/api";
+import { gobiService, type Agent, type CreateAgentData } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -86,6 +86,14 @@ export default function Agents() {
   const [scriptPreviewOpen, setScriptPreviewOpen] = useState(false);
   const itemsPerPage = 10;
 
+  // State for gobi-main data
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isCreatingAgent, setIsCreatingAgent] = useState(false);
+
   // Initialize cleanup scheduler on component mount
   useEffect(() => {
     // Start cleanup scheduler if not already running
@@ -112,126 +120,121 @@ export default function Agents() {
     deploymentMode: "livekit",
   });
 
-  // Fetch data
-  const { data: agents, refetch: refetchAgents, isLoading } = api.agents.getAll.useQuery(
-    undefined,
-    {
-      refetchInterval: autoRefresh ? 5000 : false,
-      refetchOnWindowFocus: true
+  // Fetch data from gobi-main
+  const fetchAgents = async () => {
+    try {
+      setIsLoading(true);
+      const response = await gobiService.agents.getAll({
+        page: currentPage,
+        limit: itemsPerPage,
+        status: statusFilter === 'ALL' ? undefined : statusFilter,
+        search: searchTerm || undefined
+      });
+      setAgents(response.agents || []);
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+      toast.error('Failed to fetch agents');
+    } finally {
+      setIsLoading(false);
     }
-  );
-  const { data: deployedAgents, refetch: refetchDeployedAgents } = api.agents.getDeployed.useQuery(
-    undefined,
-    {
-      refetchInterval: autoRefresh ? 3000 : false,
-      refetchOnWindowFocus: true
-    }
-  );
-  const { data: stats } = api.agents.getStats.useQuery();
-  const { data: realTimeStatus } = api.agents.getRealTimeStatus.useQuery(
-    undefined,
-    { 
-      refetchInterval: autoRefresh ? 5000 : false,
-      refetchOnWindowFocus: true
-    }
-  );
-  const { data: livekitRooms } = api.livekitSync.getLiveKitRooms.useQuery(
-    undefined,
-    {
-      refetchInterval: autoRefresh ? 10000 : false,
-    }
-  );
+  };
 
-  // Mutations
-  const createAgentMutation = api.agents.create.useMutation({
-    onSuccess: (data) => {
-      setCreateDialogOpen(false);
-      setAgentForm({ name: "", description: "", prompt: "", model: "gpt-4o", voice: "nova", temperature: 0.7, deploymentMode: "livekit" });
-      void refetchAgents();
-      toast.success(data.message || "Agent created successfully!");
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
+  const fetchStats = async () => {
+    try {
+      const statsData = await gobiService.agents.getStats();
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
 
-  const deployAgentMutation = api.agents.deploy.useMutation({
-    onSuccess: (data) => {
-      void refetchAgents();
-      toast.success(data.message || "Agent deployment started!");
-      // Refetch more frequently during deployment
+  const fetchTemplates = async () => {
+    try {
+      const response = await gobiService.agents.getTemplates();
+      setTemplates(response.templates || []);
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+    }
+  };
+
+  // Auto-refresh effect
+  useEffect(() => {
+    fetchAgents();
+    fetchStats();
+    fetchTemplates();
+
+    if (autoRefresh) {
       const interval = setInterval(() => {
-        refetchAgents();
-      }, 2000);
-      // Stop refetching after 30 seconds
-      setTimeout(() => clearInterval(interval), 30000);
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
+        fetchAgents();
+        fetchStats();
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [currentPage, statusFilter, searchTerm, autoRefresh]);
 
-  // New Python deployment mutation
-  const deployPythonMutation = api.agents.deployPython.useMutation({
-    onSuccess: (data) => {
-      void refetchAgents();
-      toast.success(data.message || "Python agent deployed successfully!");
-      // Sync with cloud after deployment
-      void syncCloudAgents();
-      setIsDeploying(false);
-      setDeployingAgentId(null);
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to deploy Python agent");
-      setIsDeploying(false);
-      setDeployingAgentId(null);
-    },
-  });
-
-  // Sync with LiveKit Cloud
-  const { refetch: syncCloudAgents } = api.agents.syncCloudAgents.useQuery(undefined, {
-    enabled: false, // Manual trigger only
-  });
-
-  const stopAgentMutation = api.agents.stop.useMutation({
-    onSuccess: (data) => {
-      void refetchAgents();
-      toast.success(data.message || "Agent stopped successfully!");
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const deleteAgentMutation = api.agents.delete.useMutation({
-    onSuccess: () => {
-      void refetchAgents();
-      toast.success("Agent deleted successfully!");
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-
-  // Sync mutation to sync agents with LiveKit cloud status
-  const syncMutation = api.livekitSync.syncAgentStatus.useMutation({
-    onSuccess: (data) => {
-      if (data.updates.length > 0) {
-        toast.success(`Synced ${data.updates.length} agents with LiveKit`);
-        void refetchAgents();
-      }
-    },
-    onError: (error) => {
-      console.error("Sync failed:", error);
-    },
-  });
-
-  const handleCreateAgent = () => {
+  // Agent operations
+  const handleCreateAgent = async () => {
     if (!agentForm.name.trim()) {
       toast.error("Please enter an agent name");
       return;
     }
-    createAgentMutation.mutate(agentForm);
+
+    setIsCreatingAgent(true);
+    try {
+      const agentData: CreateAgentData = {
+        name: agentForm.name,
+        description: agentForm.description,
+        prompt: agentForm.prompt,
+        model: agentForm.model,
+        voice: agentForm.voice,
+        temperature: agentForm.temperature,
+        deploymentMode: agentForm.deploymentMode,
+      };
+
+      await gobiService.agents.create(agentData);
+      setCreateDialogOpen(false);
+      setAgentForm({ name: "", description: "", prompt: "", model: "gpt-4o", voice: "nova", temperature: 0.7, deploymentMode: "livekit" });
+      await fetchAgents();
+      await fetchStats();
+      toast.success("Agent created successfully!");
+    } catch (error: any) {
+      toast.error(`Failed to create agent: ${error.message}`);
+    } finally {
+      setIsCreatingAgent(false);
+    }
+  };
+
+  const handleDeployAgent = async (agentId: string) => {
+    try {
+      await gobiService.agents.deploy(agentId, {});
+      toast.success("Agent deployed successfully!");
+      await fetchAgents();
+    } catch (error: any) {
+      toast.error(`Failed to deploy agent: ${error.message}`);
+    }
+  };
+
+  const handleStopAgent = async (agentId: string) => {
+    try {
+      await gobiService.agents.stop(agentId);
+      toast.success("Agent stopped successfully!");
+      await fetchAgents();
+    } catch (error: any) {
+      toast.error(`Failed to stop agent: ${error.message}`);
+    }
+  };
+
+  const handleDeleteAgent = async (agentId: string) => {
+    if (confirm("Are you sure you want to delete this agent?")) {
+      try {
+        await gobiService.agents.delete(agentId);
+        toast.success("Agent deleted successfully!");
+        await fetchAgents();
+        await fetchStats();
+      } catch (error: any) {
+        toast.error(`Failed to delete agent: ${error.message}`);
+      }
+    }
   };
 
   // Function to fetch deployment logs from API
@@ -260,70 +263,8 @@ export default function Agents() {
     deployPythonMutation.mutate({ id: agentId });
   };
 
-  const handleDeployAgent = (agentId: string) => {
-    setIsDeploying(true);
-    setDeployingAgentId(agentId);
-    setDeploymentLogs([]);
-    
-    // Clear old logs for this agent
-    fetch(`/api/deployment-logs/${agentId}`, { method: 'DELETE' }).catch(() => {});
-    
-    // Start polling for logs
-    if (logPollingInterval) {
-      clearInterval(logPollingInterval);
-    }
-    const interval = setInterval(() => {
-      fetchDeploymentLogs(agentId);
-    }, 500);
-    setLogPollingInterval(interval);
-    
-    deployAgentMutation.mutate({ id: agentId }, {
-      onSuccess: (result) => {
-        // Continue polling for a few more seconds to get final logs
-        setTimeout(() => {
-          setIsDeploying(false);
-          if (logPollingInterval) {
-            clearInterval(logPollingInterval);
-            setLogPollingInterval(null);
-          }
-          // Fetch logs one last time
-          fetchDeploymentLogs(deployingAgentId || agentId);
-        }, 5000); // Stop polling after 5 seconds
-        // Refresh the agent data
-        setTimeout(() => {
-          refetchAgents();
-        }, 1500);
-      },
-      onError: (error) => {
-        // Stop polling
-        if (logPollingInterval) {
-          clearInterval(logPollingInterval);
-          setLogPollingInterval(null);
-        }
-        
-        // Fetch final logs one more time
-        setTimeout(() => {
-          fetchDeploymentLogs(deployingAgentId || agentId);
-        }, 1000);
-        
-        setIsDeploying(false);
-        // Refresh agents to show ERROR status
-        setTimeout(() => {
-          refetchAgents();
-        }, 1500);
-      }
-    });
-  };
 
-  const handleStopAgent = (agentId: string) => {
-    stopAgentMutation.mutate({ id: agentId });
-  };
 
-  const handleDeleteAgent = (agentId: string) => {
-    if (confirm("Are you sure you want to delete this agent?")) {
-      deleteAgentMutation.mutate({ id: agentId });
-    }
-  };
 
   const getStatusColor = (status: string): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
@@ -365,7 +306,7 @@ export default function Agents() {
   });
 
   // Use deployed agents from API (includes local agents)
-  const deployedAgentsList = deployedAgents || [];
+  const deployedAgentsList = agents || [];
 
   // Pagination
   const totalPages = Math.ceil((filteredAgents?.length || 0) / itemsPerPage);
@@ -383,18 +324,21 @@ export default function Agents() {
             <p className="text-sm text-gray-600 mt-1">Manage and deploy your AI agents</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
-              onClick={() => {
-                void refetchAgents();
-                syncMutation.mutate();
+              onClick={async () => {
+                setIsSyncing(true);
+                await fetchAgents();
+                setIsSyncing(false);
+                toast.success("Agents synced successfully");
               }}
               title="Sync with LiveKit Cloud"
+              disabled={isSyncing}
             >
               <RefreshCw className={cn(
                 "h-4 w-4 mr-2",
-                syncMutation.isPending && "animate-spin"
+                isSyncing && "animate-spin"
               )} />
               Sync
             </Button>
@@ -616,12 +560,12 @@ export default function Agents() {
                     <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
                       Cancel
                     </Button>
-                    <Button 
-                      onClick={handleCreateAgent} 
-                      disabled={createAgentMutation.isPending || !agentForm.name || !agentForm.prompt}
+                    <Button
+                      onClick={handleCreateAgent}
+                      disabled={isCreatingAgent || !agentForm.name || !agentForm.prompt}
                       className="bg-blue-600 hover:bg-blue-700"
                     >
-                      {createAgentMutation.isPending ? (
+                      {isCreatingAgent ? (
                         <>
                           <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                           Creating...
@@ -747,11 +691,11 @@ export default function Agents() {
                     )} />
                     {autoRefresh ? "Auto" : "Manual"}
                   </Button>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
-                    onClick={() => {
-                      refetchAgents();
+                    onClick={async () => {
+                      await fetchAgents();
                       toast.success("Refreshed deployed agents");
                     }}
                     className="bg-white"
@@ -839,7 +783,7 @@ export default function Agents() {
                     <div className="mt-3 pt-2 border-t border-gray-100">
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-500">
-                          {agent._count?.conversations || 0} conversations
+                          {agent.totalConversations || 0} conversations
                         </span>
                         <div className="flex gap-1">
                           {agent.status !== "DEPLOYING" && (
