@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import { gobiService, type Agent, type CreateAgentData } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ import {
   FileCode,
   Eye,
   Rocket,
+  BarChart3,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
@@ -71,6 +73,7 @@ interface AgentForm {
 }
 
 export default function Agents() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -967,6 +970,10 @@ export default function Agents() {
                               <DropdownMenuItem onClick={() => handlePreviewScript(agent)}>
                                 <FileCode className="h-4 w-4 mr-2" />
                                 Preview Python Script
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => router.push(`/agents/${agent.id}`)}>
+                                <BarChart3 className="h-4 w-4 mr-2" />
+                                View Analytics
                               </DropdownMenuItem>
                               {(agent.status === "STOPPED" || agent.status === "INACTIVE" || agent.status === "ACTIVE") && (
                                 <>

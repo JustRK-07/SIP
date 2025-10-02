@@ -90,7 +90,7 @@ export function AgentStatus() {
             </button>
           )}
           <button
-            onClick={() => refetch()}
+            onClick={() => fetchAgentStatus()}
             className="text-xs text-blue-600 hover:text-blue-700 underline"
           >
             Refresh

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api } from "@/utils/api";
+import { useState, useEffect } from "react";
+import { gobiService } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,17 +8,17 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { 
-  Bot, 
-  Plus, 
-  Search, 
-  Play, 
-  Pause, 
-  Square, 
-  Settings, 
+import {
+  Bot,
+  Plus,
+  Search,
+  Play,
+  Pause,
+  Square,
+  Settings,
   Phone,
-  CheckCircle, 
-  XCircle, 
+  CheckCircle,
+  XCircle,
   AlertCircle,
   Clock,
   MessageSquare,
@@ -71,92 +71,111 @@ export default function AgentManagementContent() {
     ttsProvider: "openai",
   });
 
-  // Fetch data
-  const { data: agents, refetch: refetchAgents } = api.agents.getAll.useQuery();
-  const { data: stats } = api.agents.getStats.useQuery();
-  const { data: realTimeStatus } = api.agents.getRealTimeStatus.useQuery(
-    undefined,
-    { 
-      refetchInterval: 5000, // Refresh every 5 seconds
-      refetchOnWindowFocus: true
-    }
-  );
+  // Data state
+  const [agents, setAgents] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [realTimeStatus, setRealTimeStatus] = useState<any>(null);
 
-  // Mutations
-  const createAgentMutation = api.agents.create.useMutation({
-    onSuccess: (data) => {
+  // Loading states
+  const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Fetch agents data
+  const fetchAgents = async () => {
+    try {
+      const { agents: agentsList } = await gobiService.agents.getAll({});
+      setAgents(agentsList || []);
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const agentStats = await gobiService.agents.getStats();
+      setStats(agentStats);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
+
+  // Initial fetch and periodic refresh
+  useEffect(() => {
+    fetchAgents();
+    fetchStats();
+    const interval = setInterval(() => {
+      fetchAgents();
+      fetchStats();
+    }, 5000); // Refresh every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  // Handler functions with async/await
+  const handleCreateAgent = async () => {
+    setIsCreating(true);
+    try {
+      const result = await gobiService.agents.create(agentForm);
       setCreateDialogOpen(false);
       setAgentForm({ name: "", description: "", prompt: "", model: "gpt-4", voice: "nova", temperature: 0.7, template: "custom", deploymentMode: "livekit", customerName: "", appointmentTime: "", sttProvider: "deepgram", ttsProvider: "openai" });
-      void refetchAgents();
-      toast.success(data.message);
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
+      await fetchAgents();
+      toast.success(result.message);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create agent");
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
-  const updateAgentMutation = api.agents.update.useMutation({
-    onSuccess: (data) => {
+  const handleUpdateAgent = async () => {
+    if (!selectedAgent) return;
+    setIsUpdating(true);
+    try {
+      const result = await gobiService.agents.update(selectedAgent.id, agentForm);
       setEditDialogOpen(false);
       setSelectedAgent(null);
-      void refetchAgents();
-      toast.success(data.message);
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
+      await fetchAgents();
+      toast.success(result.message);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update agent");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
-  const deployAgentMutation = api.agents.deploy.useMutation({
-    onSuccess: (data) => {
+  const handleDeployAgent = async (agentId: string) => {
+    setIsDeploying(agentId);
+    try {
+      const result = await gobiService.agents.deploy(agentId, {});
+      await fetchAgents();
+      toast.success(result.message);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to deploy agent");
+    } finally {
       setIsDeploying(null);
-      void refetchAgents();
-      toast.success(data.message);
-    },
-    onError: (error) => {
-      setIsDeploying(null);
-      toast.error(error.message);
-    },
-  });
+    }
+  };
 
-  const stopAgentMutation = api.agents.stop.useMutation({
-    onSuccess: (data) => {
+  const handleStopAgent = async (agentId: string) => {
+    setIsStopping(agentId);
+    try {
+      const result = await gobiService.agents.stop(agentId);
+      await fetchAgents();
+      toast.success(result.message);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to stop agent");
+    } finally {
       setIsStopping(null);
-      void refetchAgents();
-      toast.success(data.message);
-    },
-    onError: (error) => {
-      setIsStopping(null);
-      toast.error(error.message);
-    },
-  });
+    }
+  };
 
-  const resetStuckAgentsMutation = api.agents.resetStuckAgents.useMutation({
-    onSuccess: (data) => {
-      void refetchAgents();
-      if (data.resetCount > 0) {
-        toast.success(data.message);
-      } else {
-        toast(data.message);
-      }
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const deleteAgentMutation = api.agents.delete.useMutation({
-    onSuccess: (data) => {
-      void refetchAgents();
-      toast.success(data.message);
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const handleCreateAgent = () => {
-    createAgentMutation.mutate(agentForm);
+  const handleDeleteAgent = async (agentId: string) => {
+    try {
+      const result = await gobiService.agents.delete(agentId);
+      await fetchAgents();
+      toast.success(result.message);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete agent");
+    }
   };
 
   const handleEditAgent = (agent: any) => {
@@ -178,32 +197,14 @@ export default function AgentManagementContent() {
     setEditDialogOpen(true);
   };
 
-  const handleUpdateAgent = () => {
-    if (!selectedAgent) return;
-    updateAgentMutation.mutate({
-      id: selectedAgent.id,
-      ...agentForm,
-    });
-  };
-
-  const handleDeployAgent = (agentId: string) => {
-    setIsDeploying(agentId);
-    deployAgentMutation.mutate({ id: agentId });
-  };
-
-  const handleStopAgent = (agentId: string) => {
-    setIsStopping(agentId);
-    stopAgentMutation.mutate({ id: agentId });
-  };
-
-  const handleDeleteAgent = (agentId: string, agentName: string) => {
+  const handleDeleteAgentConfirm = async (agentId: string, agentName: string) => {
     if (confirm(`Are you sure you want to delete agent "${agentName}"? This action cannot be undone.`)) {
-      deleteAgentMutation.mutate({ id: agentId });
+      await handleDeleteAgent(agentId);
     }
   };
 
-  const handleResetStuckAgents = () => {
-    resetStuckAgentsMutation.mutate();
+  const handleResetStuckAgents = async () => {
+    toast.info("Reset stuck agents functionality needs backend implementation");
   };
 
   const handleTestAgent = (agent: any) => {
@@ -554,8 +555,8 @@ export default function AgentManagementContent() {
                 <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleCreateAgent} disabled={createAgentMutation.isPending}>
-                  {createAgentMutation.isPending ? "Creating..." : "Create Agent"}
+                <Button onClick={handleCreateAgent} disabled={isCreating}>
+                  {isCreating ? "Creating..." : "Create Agent"}
                 </Button>
               </div>
             </div>
@@ -911,8 +912,8 @@ export default function AgentManagementContent() {
               <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleUpdateAgent} disabled={updateAgentMutation.isPending}>
-                {updateAgentMutation.isPending ? "Updating..." : "Update Agent"}
+              <Button onClick={handleUpdateAgent} disabled={isUpdating}>
+                {isUpdating ? "Updating..." : "Update Agent"}
               </Button>
             </div>
           </div>

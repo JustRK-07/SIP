@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -6,18 +6,18 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { 
-  Bot, 
-  Users, 
-  Calendar, 
-  BarChart3, 
-  Plus, 
+import {
+  Bot,
+  Users,
+  Calendar,
+  BarChart3,
+  Plus,
   Zap,
   MessageSquare,
   Phone,
   Settings
 } from 'lucide-react';
-import { api } from '@/utils/api';
+import { gobiService } from '@/services/gobiService';
 import { toast } from 'sonner';
 
 export default function AgentTemplates() {
@@ -32,32 +32,21 @@ export default function AgentTemplates() {
     maxTokens: 1000,
   });
   const [isCreating, setIsCreating] = useState(false);
+  const [templates, setTemplates] = useState<any[]>([]);
 
   // Fetch templates
-  const { data: templatesData } = api.agents.getTemplates.useQuery();
-  const templates = templatesData?.templates || [];
-
-  // Create agent from template mutation
-  const createFromTemplateMutation = api.agents.createFromTemplate.useMutation({
-    onSuccess: (data) => {
-      setIsCreating(false);
-      toast.success(data.message);
-      setSelectedTemplate(null);
-      setCustomizations({
-        name: '',
-        description: '',
-        prompt: '',
-        model: '',
-        voice: '',
-        temperature: 0.7,
-        maxTokens: 1000,
-      });
-    },
-    onError: (error) => {
-      setIsCreating(false);
-      toast.error(error.message);
-    },
-  });
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      try {
+        const templatesData = await gobiService.agents.getTemplates();
+        setTemplates(templatesData?.templates || []);
+      } catch (error) {
+        console.error('Error fetching templates:', error);
+        setTemplates([]);
+      }
+    };
+    fetchTemplates();
+  }, []);
 
   const handleTemplateSelect = (template: any) => {
     setSelectedTemplate(template);
@@ -72,25 +61,42 @@ export default function AgentTemplates() {
     });
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!selectedTemplate || !customizations.name) {
       toast.error('Please fill in all required fields');
       return;
     }
 
     setIsCreating(true);
-    createFromTemplateMutation.mutate({
-      templateId: selectedTemplate.id,
-      name: customizations.name,
-      description: customizations.description,
-      customizations: {
-        prompt: customizations.prompt,
-        model: customizations.model,
-        voice: customizations.voice,
-        temperature: customizations.temperature,
-        maxTokens: customizations.maxTokens,
-      },
-    });
+    try {
+      const data = await gobiService.agents.createFromTemplate({
+        templateId: selectedTemplate.id,
+        name: customizations.name,
+        description: customizations.description,
+        customizations: {
+          prompt: customizations.prompt,
+          model: customizations.model,
+          voice: customizations.voice,
+          temperature: customizations.temperature,
+          maxTokens: customizations.maxTokens,
+        },
+      });
+      toast.success(data.message);
+      setSelectedTemplate(null);
+      setCustomizations({
+        name: '',
+        description: '',
+        prompt: '',
+        model: '',
+        voice: '',
+        temperature: 0.7,
+        maxTokens: 1000,
+      });
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create agent from template');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const getTemplateIcon = (templateId: string) => {

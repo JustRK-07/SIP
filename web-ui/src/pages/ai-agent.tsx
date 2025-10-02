@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { api } from "@/utils/api";
+import { gobiService } from "@/services/gobiService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -236,13 +236,22 @@ export default function AIAgent() {
   }, [currentRoom, testMode]);
 
   // Fetch agent status and metrics
-  const { data: agentStatus, refetch: refetchStatus } = api.campaign.getAgentStatus.useQuery(
-    undefined,
-    {
-      refetchInterval: 5000, // Check every 5 seconds
-      refetchOnWindowFocus: true,
+  const [agentStatus, setAgentStatus] = useState<any>(null);
+
+  const fetchAgentStatus = async () => {
+    try {
+      const status = await gobiService.campaigns.getAgentStatus();
+      setAgentStatus(status);
+    } catch (error) {
+      console.error('Error fetching agent status:', error);
     }
-  );
+  };
+
+  useEffect(() => {
+    fetchAgentStatus();
+    const interval = setInterval(fetchAgentStatus, 5000); // Check every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   // Mock agent metrics (in a real app, this would come from an API)
   const [agentMetrics, setAgentMetrics] = useState<AgentMetrics>({
@@ -298,66 +307,67 @@ export default function AIAgent() {
     setAgentLogs(mockLogs);
   }, []);
 
-  // Mutations for agent control
-  const { mutate: startAgent, isPending: isStarting } = api.campaign.startAgent.useMutation({
-    onSuccess: () => {
-      toast.success("AI Agent started successfully!");
-      void refetchStatus();
-    },
-    onError: (error) => {
-      toast.error(`Failed to start agent: ${error.message}`);
-    },
-  });
-
-  const { mutate: stopAgent, isPending: isStopping } = api.campaign.stopAgent.useMutation({
-    onSuccess: () => {
-      toast.success("AI Agent stopped successfully!");
-      void refetchStatus();
-    },
-    onError: (error) => {
-      toast.error(`Failed to stop agent: ${error.message}`);
-    },
-  });
-
-  const { mutate: restartAgent, isPending: isRestarting } = api.campaign.restartAgent.useMutation({
-    onSuccess: () => {
-      toast.success("AI Agent restarted successfully!");
-      void refetchStatus();
-    },
-    onError: (error) => {
-      toast.error(`Failed to restart agent: ${error.message}`);
-    },
-  });
-
-  const { mutate: makeTestCall, isPending: isTestCalling } = api.livekit.makeCall.useMutation({
-    onSuccess: () => {
-      toast.success("Test call initiated successfully!");
-      setTestPhoneNumber("");
-    },
-    onError: (error) => {
-      toast.error(`Failed to make test call: ${error.message}`);
-    },
-  });
+  // Agent control state
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [isTestCalling, setIsTestCalling] = useState(false);
 
   // Event handlers
-  const handleStartAgent = () => {
-    startAgent();
+  const handleStartAgent = async () => {
+    setIsStarting(true);
+    try {
+      // This endpoint doesn't exist yet in gobi-main, so this is a placeholder
+      toast.info("Start agent functionality needs backend endpoint implementation");
+      await fetchAgentStatus();
+    } catch (error: any) {
+      toast.error(`Failed to start agent: ${error.message}`);
+    } finally {
+      setIsStarting(false);
+    }
   };
 
-  const handleStopAgent = () => {
-    stopAgent();
+  const handleStopAgent = async () => {
+    setIsStopping(true);
+    try {
+      // This endpoint doesn't exist yet in gobi-main, so this is a placeholder
+      toast.info("Stop agent functionality needs backend endpoint implementation");
+      await fetchAgentStatus();
+    } catch (error: any) {
+      toast.error(`Failed to stop agent: ${error.message}`);
+    } finally {
+      setIsStopping(false);
+    }
   };
 
-  const handleRestartAgent = () => {
-    restartAgent();
+  const handleRestartAgent = async () => {
+    setIsRestarting(true);
+    try {
+      // This endpoint doesn't exist yet in gobi-main, so this is a placeholder
+      toast.info("Restart agent functionality needs backend endpoint implementation");
+      await fetchAgentStatus();
+    } catch (error: any) {
+      toast.error(`Failed to restart agent: ${error.message}`);
+    } finally {
+      setIsRestarting(false);
+    }
   };
 
-  const handleTestCall = () => {
+  const handleTestCall = async () => {
     if (!testPhoneNumber.trim()) {
       toast.error("Please enter a phone number");
       return;
     }
-    makeTestCall({ phoneNumber: testPhoneNumber });
+    setIsTestCalling(true);
+    try {
+      // This endpoint doesn't exist yet in gobi-main, so this is a placeholder
+      toast.info("Test call functionality needs backend endpoint implementation");
+      setTestPhoneNumber("");
+    } catch (error: any) {
+      toast.error(`Failed to make test call: ${error.message}`);
+    } finally {
+      setIsTestCalling(false);
+    }
   };
 
   const getLogIcon = (level: string, source: string) => {

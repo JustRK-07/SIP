@@ -1,16 +1,16 @@
 import { useState, useEffect } from "react";
-import { api } from "@/utils/api";
+import { gobiService } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Phone, 
-  Users, 
-  Activity, 
-  TrendingUp, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Phone,
+  Users,
+  Activity,
+  TrendingUp,
+  Clock,
+  CheckCircle,
+  XCircle,
   AlertCircle,
   Play,
   Pause,
@@ -53,36 +53,38 @@ export default function AdminDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Fetch dashboard data
-  const { data: campaignStats } = api.campaign.getOverallStats.useQuery();
-  const { data: agentStats } = api.agents.getStats.useQuery();
-  const { data: numberStats } = api.numbers.getStats.useQuery();
-
-  // Refresh data every 5 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
+  const fetchDashboardData = async () => {
+    try {
       setIsRefreshing(true);
-      // Trigger refetch of all queries
-      setTimeout(() => setIsRefreshing(false), 1000);
-    }, 5000);
+      const [campaignStats, agentStats, numberStats] = await Promise.all([
+        gobiService.campaigns.getStats(),
+        gobiService.agents.getStats(),
+        gobiService.numbers.getStats(),
+      ]);
 
-    return () => clearInterval(interval);
-  }, []);
-
-  // Update stats when data changes
-  useEffect(() => {
-    if (campaignStats && agentStats && numberStats) {
       setStats({
-        totalCalls: campaignStats.totalCalls || 0,
-        activeCalls: campaignStats.statusDistribution?.["IN_PROGRESS"] || 0,
+        totalCalls: campaignStats.totalCampaigns || 0,
+        activeCalls: campaignStats.activeCampaigns || 0,
         totalAgents: agentStats.totalAgents || 0,
         activeAgents: agentStats.activeAgents || 0,
         totalNumbers: numberStats.totalNumbers || 0,
         availableNumbers: numberStats.availableNumbers || 0,
-        conversionRate: campaignStats.successRate || 0,
-        averageDuration: 0, // Not available in API response
+        conversionRate: 0, // Not available in current API
+        averageDuration: 0, // Not available in current API
       });
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setIsRefreshing(false);
     }
-  }, [campaignStats, agentStats, numberStats]);
+  };
+
+  // Initial fetch and refresh every 5 seconds
+  useEffect(() => {
+    fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);

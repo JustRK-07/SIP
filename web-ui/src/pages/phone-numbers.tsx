@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import campaignService from "@/services/campaignService";
 import type { PhoneNumber } from "@/services/campaignService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +42,7 @@ import {
   Check,
   X,
   Loader2,
+  Eye,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useAuth } from "@/context/AuthContext";
@@ -62,6 +64,7 @@ interface AvailablePhoneNumber {
 }
 
 export default function PhoneNumbers() {
+  const router = useRouter();
   const { tenantId } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -522,6 +525,10 @@ export default function PhoneNumbers() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
                             <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => router.push(`/phone-numbers/${number.id}`)}>
+                              <Eye className="h-4 w-4 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
                             <DropdownMenuItem>
                               Assign to Campaign
                             </DropdownMenuItem>

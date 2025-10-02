@@ -34,11 +34,20 @@ class BaseGobiService {
   }
 
   protected async getAuthHeaders(): Promise<HeadersInit> {
-    const token = await getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    };
+    try {
+      const token = await getToken();
+      return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+    } catch (error) {
+      // If authentication fails, redirect to login page
+      if (typeof window !== 'undefined') {
+        console.error('Authentication error:', error);
+        window.location.href = '/auth';
+      }
+      throw error;
+    }
   }
 
   protected async handleResponse<T>(response: Response, retryCount = 0): Promise<T> {
@@ -51,14 +60,14 @@ class BaseGobiService {
         errorData = { message: errorText };
       }
 
-      // Check if it's a token expiration error
-      if (response.status === 401 && retryCount === 0) {
-        // Token might have expired between check and request
-        // Force refresh and retry once
+      // Check if it's an authentication error
+      if (response.status === 401) {
+        // Clear tokens and redirect to login
         if (typeof window !== 'undefined') {
-          localStorage.removeItem('access_token');
+          authManager.clearTokens();
+          console.error('Authentication failed. Redirecting to login.');
+          window.location.href = '/auth';
         }
-        return this.handleResponse<T>(response, retryCount + 1);
       }
 
       throw new GobiAPIError(
@@ -423,6 +432,98 @@ class TrunksService extends BaseGobiService {
     const response = await fetch(url, { headers });
     return this.handleResponse(response);
   }
+
+  // Platform Trunk CRUD
+  async getPlatformTrunkById(id: string): Promise<{ data: PlatformTrunk }> {
+    const url = this.buildUrl(`/api/platform-trunks/${id}`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
+
+  async createPlatformTrunk(data: { name: string; uri: string; username?: string; password?: string; authDomain?: string }): Promise<{ message: string; platformTrunk: PlatformTrunk }> {
+    const url = this.buildUrl('/api/platform-trunks');
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async updatePlatformTrunk(id: string, data: { name?: string; uri?: string; username?: string; password?: string; authDomain?: string }): Promise<{ message: string; platformTrunk: PlatformTrunk }> {
+    const url = this.buildUrl(`/api/platform-trunks/${id}`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async deletePlatformTrunk(id: string): Promise<{ message: string }> {
+    const url = this.buildUrl(`/api/platform-trunks/${id}`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers,
+    });
+    return this.handleResponse(response);
+  }
+
+  // LiveKit Trunk CRUD
+  async getLiveKitTrunkById(id: string): Promise<{ data: LiveKitTrunk }> {
+    const tenantId = this.getTenantId();
+    const url = this.buildUrl(`/api/tenants/${tenantId}/livekit-trunks/${id}`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
+
+  async createLiveKitTrunk(data: { name: string; description?: string; trunkType: 'INBOUND' | 'OUTBOUND'; platformTrunkId?: string }): Promise<{ message: string; livekitTrunk: LiveKitTrunk }> {
+    const tenantId = this.getTenantId();
+    const url = this.buildUrl(`/api/tenants/${tenantId}/livekit-trunks`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async updateLiveKitTrunk(id: string, data: { name?: string; description?: string; status?: string; maxConcurrentCalls?: number }): Promise<{ message: string; livekitTrunk: LiveKitTrunk }> {
+    const tenantId = this.getTenantId();
+    const url = this.buildUrl(`/api/tenants/${tenantId}/livekit-trunks/${id}`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteLiveKitTrunk(id: string): Promise<{ message: string }> {
+    const tenantId = this.getTenantId();
+    const url = this.buildUrl(`/api/tenants/${tenantId}/livekit-trunks/${id}`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers,
+    });
+    return this.handleResponse(response);
+  }
 }
 
 // ===============================
@@ -493,6 +594,29 @@ class LeadListService extends BaseGobiService {
       method: 'POST',
       headers,
       body: JSON.stringify({ content: data.content }),
+    });
+    return this.handleResponse(response);
+  }
+
+  async update(id: string, data: { name?: string; description?: string }): Promise<{ message: string; leadList: LeadList }> {
+    const url = this.buildUrl(`/api/lead-lists/${id}`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async delete(id: string): Promise<{ message: string }> {
+    const url = this.buildUrl(`/api/lead-lists/${id}`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers,
     });
     return this.handleResponse(response);
   }
@@ -707,12 +831,260 @@ class AgentsService extends BaseGobiService {
     const response = await fetch(url, { headers });
     return this.handleResponse(response);
   }
+
+  async testCall(id: string, data: { phoneNumber?: string; testScenario?: string }): Promise<{ message: string; callSid?: string; status?: string }> {
+    const url = this.buildUrl(`/api/agents/${id}/test-call`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async clone(id: string, data: { name: string; description?: string }): Promise<{ message: string; agent: Agent; originalAgentId: string }> {
+    const url = this.buildUrl(`/api/agents/${id}/clone`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async updateVoiceConfig(id: string, data: { voice?: string; speed?: number; pitch?: number; volume?: number; language?: string }): Promise<{ message: string; agent: Agent }> {
+    const url = this.buildUrl(`/api/agents/${id}/voice-config`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async getKnowledgeBase(id: string): Promise<{ documents: any[]; totalDocuments: number; lastUpdated?: string }> {
+    const url = this.buildUrl(`/api/agents/${id}/knowledge-base`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
+
+  async uploadKnowledgeBase(id: string, data: { documents: any[]; type?: string }): Promise<{ message: string; documentsUploaded: number }> {
+    const url = this.buildUrl(`/api/agents/${id}/knowledge-base`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async getWebhooks(id: string): Promise<{ webhooks: any[]; totalWebhooks: number }> {
+    const url = this.buildUrl(`/api/agents/${id}/webhooks`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
+
+  async updateWebhooks(id: string, data: { webhooks: Array<{ event: string; url: string; method?: string; headers?: any }> }): Promise<{ message: string; webhooks: any[] }> {
+    const url = this.buildUrl(`/api/agents/${id}/webhooks`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async getConversations(id: string, params?: { page?: number; limit?: number; startDate?: string; endDate?: string }): Promise<{ conversations: any[]; pagination: any }> {
+    const url = this.buildUrl(`/api/agents/${id}/conversations`, params);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
 }
 
 // ===============================
 // EXPORT SINGLETON INSTANCES
 // ===============================
 export const campaignService = new CampaignService();
+// ============================================
+// Authentication Service
+// ============================================
+class AuthService extends BaseGobiService {
+  async login(data: { username: string; password: string }): Promise<{ accessToken: string; refreshToken: string; tokenType: string; firebaseToken?: string }> {
+    const url = this.buildUrl('/api/auth/login');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async refresh(data: { refreshToken: string }): Promise<{ accessToken: string; refreshToken: string; tokenType: string }> {
+    const url = this.buildUrl('/api/auth/refresh');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async logout(): Promise<{ message: string }> {
+    const url = this.buildUrl('/api/auth/logout');
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+    });
+    return this.handleResponse(response);
+  }
+
+  async validate(): Promise<{ valid: boolean; user: any }> {
+    const url = this.buildUrl('/api/auth/validate');
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
+
+  async register(data: { username: string; email: string; password: string; firstName?: string; lastName?: string }): Promise<{ message: string; userId: string }> {
+    const url = this.buildUrl('/api/auth/register');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async getProfile(): Promise<{ user: any }> {
+    const url = this.buildUrl('/api/auth/profile');
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
+
+  async updateProfile(data: { firstName?: string; lastName?: string; email?: string; phone?: string }): Promise<{ message: string; user: any }> {
+    const url = this.buildUrl('/api/auth/profile');
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async forgotPassword(data: { email: string }): Promise<{ message: string }> {
+    const url = this.buildUrl('/api/auth/forgot-password');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async resetPassword(data: { token: string; newPassword: string }): Promise<{ message: string }> {
+    const url = this.buildUrl('/api/auth/reset-password');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async changePassword(data: { currentPassword: string; newPassword: string }): Promise<{ message: string }> {
+    const url = this.buildUrl('/api/auth/change-password');
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+}
+
+// ============================================
+// Tenant Service
+// ============================================
+class TenantService extends BaseGobiService {
+  async getAll(): Promise<{ tenants: any[]; total: number }> {
+    const url = this.buildUrl('/api/tenants');
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
+
+  async getById(id: string): Promise<{ tenant: any }> {
+    const url = this.buildUrl(`/api/tenants/${id}`);
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
+
+  async create(data: { name: string; domain?: string; settings?: any }): Promise<{ message: string; tenant: any }> {
+    const url = this.buildUrl('/api/tenants');
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async update(id: string, data: { name?: string; domain?: string; settings?: any; isActive?: boolean }): Promise<{ message: string; tenant: any }> {
+    const url = this.buildUrl(`/api/tenants/${id}`);
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async delete(id: string): Promise<{ message: string }> {
+    const url = this.buildUrl(`/api/tenants/${id}`);
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers,
+    });
+    return this.handleResponse(response);
+  }
+
+  async activate(id: string): Promise<{ message: string; tenant: any }> {
+    const url = this.buildUrl(`/api/tenants/${id}/activate`);
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers,
+    });
+    return this.handleResponse(response);
+  }
+}
+
+export const authService = new AuthService();
+export const tenantService = new TenantService();
 export const numbersService = new NumbersService();
 export const trunksService = new TrunksService();
 export const leadListService = new LeadListService();
@@ -721,6 +1093,8 @@ export const agentsService = new AgentsService();
 
 // Export all services as a single object for convenience
 export const gobiService = {
+  auth: authService,
+  tenants: tenantService,
   campaigns: campaignService,
   numbers: numbersService,
   trunks: trunksService,

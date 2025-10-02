@@ -889,10 +889,15 @@ router.get('/:agentId/analytics', authenticateToken, async (req, res) => {
       dateFilter.lte = new Date(endDate);
     }
 
-    // Get agent with conversations
+    // Get agent with conversations and campaigns for access check
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
       include: {
+        campaigns: {
+          include: {
+            campaign: true
+          }
+        },
         conversations: {
           where: dateFilter.gte || dateFilter.lte ? {
             createdAt: dateFilter
@@ -912,6 +917,18 @@ router.get('/:agentId/analytics', authenticateToken, async (req, res) => {
 
     if (!agent) {
       return ResponseService.notFound(res, 'Agent not found');
+    }
+
+    // Check if user has access to this agent
+    if (!req.user.roles?.includes('admin')) {
+      const userTenantId = req.user.acct;
+      const hasAccess = agent.campaigns.some(ca =>
+        ca.campaign.tenantId === userTenantId
+      );
+
+      if (!hasAccess) {
+        return ResponseService.forbidden(res, 'Access denied to this agent');
+      }
     }
 
     // Calculate metrics
@@ -1429,6 +1446,33 @@ router.get('/:agentId/conversations', authenticateToken, async (req, res) => {
     const { page = 1, limit = 20, status, startDate, endDate } = req.query;
     const offset = (page - 1) * limit;
 
+    // Check if user has access to this agent
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      include: {
+        campaigns: {
+          include: {
+            campaign: true
+          }
+        }
+      }
+    });
+
+    if (!agent) {
+      return ResponseService.notFound(res, 'Agent not found');
+    }
+
+    if (!req.user.roles?.includes('admin')) {
+      const userTenantId = req.user.acct;
+      const hasAccess = agent.campaigns.some(ca =>
+        ca.campaign.tenantId === userTenantId
+      );
+
+      if (!hasAccess) {
+        return ResponseService.forbidden(res, 'Access denied to this agent');
+      }
+    }
+
     // Build where clause
     const where = { agentId };
 
@@ -1508,6 +1552,33 @@ router.get('/:agentId/performance', authenticateToken, async (req, res) => {
   try {
     const { agentId } = req.params;
     const { period = 'week' } = req.query;
+
+    // Check if user has access to this agent
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      include: {
+        campaigns: {
+          include: {
+            campaign: true
+          }
+        }
+      }
+    });
+
+    if (!agent) {
+      return ResponseService.notFound(res, 'Agent not found');
+    }
+
+    if (!req.user.roles?.includes('admin')) {
+      const userTenantId = req.user.acct;
+      const hasAccess = agent.campaigns.some(ca =>
+        ca.campaign.tenantId === userTenantId
+      );
+
+      if (!hasAccess) {
+        return ResponseService.forbidden(res, 'Access denied to this agent');
+      }
+    }
 
     // Calculate date range based on period
     const now = new Date();

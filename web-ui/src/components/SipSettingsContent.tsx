@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { api } from '@/utils/api';
+// NOTE: This component uses TRPC endpoints not yet migrated to gobiService
+// import { gobiService } from '@/services/gobiService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

@@ -2,8 +2,8 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import authManager from "../utils/auth";
 
-// Gobi-main API configuration
-const GOBI_API_URL = process.env.NEXT_PUBLIC_GOBI_API_URL || 'http://localhost:3000';
+// Gobi-main API configuration - must match auth.ts
+const GOBI_API_URL = process.env.NEXT_PUBLIC_GOBI_MAIN_API_URL || 'http://localhost:3000';
 
 interface AuthContextType {
   isAuthenticated: boolean;

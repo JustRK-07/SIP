@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Phone, MessageSquare, Zap, ExternalLink, Play, Pause } from 'lucide-react';
-import { api } from '@/utils/api';
+// NOTE: This component uses TRPC endpoints not yet migrated to gobiService
+// import { gobiService } from '@/services/gobiService';
 import { toast } from 'sonner';
 
 interface OneClickLaunchProps {

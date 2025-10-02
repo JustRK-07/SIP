@@ -68,11 +68,14 @@ export default function LeadLists() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [selectedList, setSelectedList] = useState<string | null>(null);
+  const [selectedList, setSelectedList] = useState<LeadList | null>(null);
   const [newListName, setNewListName] = useState("");
   const [newListDescription, setNewListDescription] = useState("");
+  const [editListName, setEditListName] = useState("");
+  const [editListDescription, setEditListDescription] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -83,6 +86,7 @@ export default function LeadLists() {
   const [listDetails, setListDetails] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -95,7 +99,7 @@ export default function LeadLists() {
   // Fetch list details when dialog opens
   useEffect(() => {
     if (selectedList && viewDialogOpen) {
-      fetchListDetails(selectedList);
+      fetchListDetails(selectedList.id);
     }
   }, [selectedList, viewDialogOpen]);
 
@@ -173,7 +177,7 @@ export default function LeadLists() {
       });
 
       const response = await gobiService.leadLists.uploadLeads({
-        listId: selectedList,
+        listId: selectedList.id,
         content: csvContent,
       });
 
@@ -189,18 +193,52 @@ export default function LeadLists() {
     }
   };
 
-  const handleDeleteList = async (id: string) => {
-    if (confirm("Are you sure you want to delete this lead list?")) {
-      setIsDeleting(true);
-      try {
-        // Note: deleteList method needs to be implemented in gobiService
-        // For now, we'll show a message that this feature is not yet implemented
-        toast.error("Delete functionality needs to be implemented in gobi-main API");
-      } catch (error: any) {
-        toast.error(`Failed to delete list: ${error.message}`);
-      } finally {
-        setIsDeleting(false);
-      }
+  const handleEditList = (list: LeadList) => {
+    setSelectedList(list);
+    setEditListName(list.name);
+    setEditListDescription(list.description || "");
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateList = async () => {
+    if (!selectedList || !editListName.trim()) {
+      toast.error("Please enter a list name");
+      return;
+    }
+
+    setIsEditing(true);
+    try {
+      await gobiService.leadLists.update(selectedList.id, {
+        name: editListName,
+        description: editListDescription || undefined,
+      });
+      toast.success("Lead list updated successfully!");
+      setEditDialogOpen(false);
+      setSelectedList(null);
+      setEditListName("");
+      setEditListDescription("");
+      await fetchLeadLists();
+    } catch (error: any) {
+      toast.error(`Failed to update list: ${error.message}`);
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  const handleDeleteList = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete "${name}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await gobiService.leadLists.delete(id);
+      toast.success("Lead list deleted successfully!");
+      await fetchLeadLists();
+    } catch (error: any) {
+      toast.error(`Failed to delete list: ${error.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -462,14 +500,14 @@ export default function LeadLists() {
                               <DropdownMenuLabel>Actions</DropdownMenuLabel>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => {
-                                setSelectedList(list.id);
+                                setSelectedList(list);
                                 setViewDialogOpen(true);
                               }}>
                                 <Eye className="h-4 w-4 mr-2" />
                                 View Leads
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => {
-                                setSelectedList(list.id);
+                                setSelectedList(list);
                                 setUploadDialogOpen(true);
                               }}>
                                 <Upload className="h-4 w-4 mr-2" />
@@ -479,17 +517,18 @@ export default function LeadLists() {
                                 <Download className="h-4 w-4 mr-2" />
                                 Export List
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEditList(list)}>
                                 <Edit className="h-4 w-4 mr-2" />
                                 Edit List
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 className="text-red-600"
-                                onClick={() => handleDeleteList(list.id)}
+                                onClick={() => handleDeleteList(list.id, list.name)}
+                                disabled={isDeleting}
                               >
                                 <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
+                                {isDeleting ? "Deleting..." : "Delete"}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -548,6 +587,50 @@ export default function LeadLists() {
             )}
           </CardContent>
         </Card>
+
+        {/* Edit Lead List Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Lead List</DialogTitle>
+              <DialogDescription>
+                Update the name and description of this lead list
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              <div>
+                <Label>List Name</Label>
+                <Input
+                  placeholder="Enter list name"
+                  value={editListName}
+                  onChange={(e) => setEditListName(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Description (Optional)</Label>
+                <Textarea
+                  placeholder="Enter list description"
+                  value={editListDescription}
+                  onChange={(e) => setEditListDescription(e.target.value)}
+                  rows={3}
+                />
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={() => {
+                  setEditDialogOpen(false);
+                  setSelectedList(null);
+                  setEditListName("");
+                  setEditListDescription("");
+                }}>
+                  Cancel
+                </Button>
+                <Button onClick={handleUpdateList} disabled={isEditing}>
+                  {isEditing ? "Updating..." : "Update List"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Upload CSV Dialog */}
         <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>

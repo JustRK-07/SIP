@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import { gobiService } from "@/services/gobiService";
 import type { Campaign as GobiCampaign, PhoneNumber, CreateCampaignData } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +53,7 @@ import {
   PhoneIncoming,
   PhoneOutgoing,
   Wifi,
+  Eye,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -71,6 +73,7 @@ type LeadList = {
 };
 
 export default function Campaigns() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -195,6 +198,10 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
     `;
 
     alert(details);
+  };
+
+  const handleViewDetails = (campaignId: string) => {
+    router.push(`/campaigns/${campaignId}`);
   };
 
   const handleDeleteCampaign = async (campaignId: string, campaignName: string) => {
@@ -680,6 +687,10 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
                             <DropdownMenuContent align="end">
                               <DropdownMenuLabel>Actions</DropdownMenuLabel>
                               <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => handleViewDetails(campaign.id)}>
+                                <Eye className="h-4 w-4 mr-2" />
+                                View Details
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleStatusUpdate(campaign.id, 'ACTIVE')}>
                                 <Play className="h-4 w-4 mr-2" />
                                 Activate Campaign
