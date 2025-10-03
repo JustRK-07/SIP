@@ -6,6 +6,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -38,6 +50,13 @@ import {
   Star,
   Calendar,
   Zap,
+  BookOpen,
+  Plus,
+  FileText,
+  Link as LinkIcon,
+  HelpCircle,
+  File,
+  Volume2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -50,10 +69,21 @@ export default function AgentAnalytics() {
   const [performance, setPerformance] = useState<any>(null);
   const [conversations, setConversations] = useState<any[]>([]);
   const [pagination, setPagination] = useState<any>(null);
+  const [knowledgeBase, setKnowledgeBase] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<string>("week");
   const [currentPage, setCurrentPage] = useState(1);
+  const [isAddKBDialogOpen, setIsAddKBDialogOpen] = useState(false);
+  const [newKBItem, setNewKBItem] = useState({ type: 'faq', title: '', content: '', metadata: {} });
+  const [voiceConfig, setVoiceConfig] = useState({
+    voice: '',
+    speed: 1.0,
+    pitch: 1.0,
+    volume: 1.0,
+    language: 'en-US',
+    emotion: 'neutral'
+  });
 
   useEffect(() => {
     if (id && typeof id === 'string') {
@@ -64,11 +94,12 @@ export default function AgentAnalytics() {
   const fetchAgentData = async (agentId: string) => {
     try {
       setIsLoading(true);
-      const [agentData, analyticsData, performanceData, conversationsData] = await Promise.all([
+      const [agentData, analyticsData, performanceData, conversationsData, knowledgeBaseData] = await Promise.all([
         gobiService.agents.getById(agentId),
         gobiService.agents.getAnalytics(agentId),
         gobiService.agents.getPerformance(agentId, selectedPeriod),
         gobiService.agents.getConversations(agentId, { page: currentPage, limit: 10 }),
+        gobiService.agents.getKnowledgeBase(agentId),
       ]);
 
       setAgent(agentData);
@@ -76,6 +107,12 @@ export default function AgentAnalytics() {
       setPerformance(performanceData);
       setConversations(conversationsData.conversations || []);
       setPagination(conversationsData.pagination || null);
+      setKnowledgeBase(knowledgeBaseData.knowledgeBase || []);
+
+      // Initialize voice config from agent data
+      if (agentData.voice) {
+        setVoiceConfig(prev => ({ ...prev, voice: agentData.voice || '' }));
+      }
     } catch (error: any) {
       console.error('Error fetching agent analytics:', error);
       toast.error('Failed to load agent analytics');
@@ -104,6 +141,54 @@ export default function AgentAnalytics() {
 
   const handlePeriodChange = (period: string) => {
     setSelectedPeriod(period);
+  };
+
+  const handleAddKBItem = async () => {
+    if (!id || typeof id !== 'string') return;
+    if (!newKBItem.content || !newKBItem.type) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      await gobiService.agents.addKnowledgeBaseItem(id, newKBItem);
+      toast.success('Knowledge base item added successfully');
+      setIsAddKBDialogOpen(false);
+      setNewKBItem({ type: 'faq', title: '', content: '', metadata: {} });
+
+      // Refresh knowledge base data
+      const knowledgeBaseData = await gobiService.agents.getKnowledgeBase(id);
+      setKnowledgeBase(knowledgeBaseData.knowledgeBase || []);
+    } catch (error: any) {
+      console.error('Error adding knowledge base item:', error);
+      toast.error('Failed to add knowledge base item');
+    }
+  };
+
+  const getKBTypeIcon = (type: string) => {
+    switch (type) {
+      case 'faq': return <HelpCircle className="h-4 w-4" />;
+      case 'document': return <FileText className="h-4 w-4" />;
+      case 'url': return <LinkIcon className="h-4 w-4" />;
+      case 'script': return <File className="h-4 w-4" />;
+      default: return <BookOpen className="h-4 w-4" />;
+    }
+  };
+
+  const handleUpdateVoiceConfig = async () => {
+    if (!id || typeof id !== 'string') return;
+
+    try {
+      await gobiService.agents.updateVoiceConfig(id, voiceConfig);
+      toast.success('Voice configuration updated successfully');
+
+      // Refresh agent data
+      const agentData = await gobiService.agents.getById(id);
+      setAgent(agentData);
+    } catch (error: any) {
+      console.error('Error updating voice config:', error);
+      toast.error('Failed to update voice configuration');
+    }
   };
 
   if (isLoading) {
@@ -152,22 +237,10 @@ export default function AgentAnalytics() {
                   {agent.status}
                 </Badge>
               </div>
-              <p className="text-sm text-gray-600 mt-1">Agent Analytics & Performance</p>
+              <p className="text-sm text-gray-600 mt-1">Agent Details & Management</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={selectedPeriod} onValueChange={handlePeriodChange}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Select period" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="week">This Week</SelectItem>
-                <SelectItem value="month">This Month</SelectItem>
-                <SelectItem value="quarter">This Quarter</SelectItem>
-                <SelectItem value="year">This Year</SelectItem>
-              </SelectContent>
-            </Select>
             <Button
               variant="outline"
               size="sm"
@@ -180,7 +253,41 @@ export default function AgentAnalytics() {
           </div>
         </div>
 
-        {/* Analytics Overview Cards */}
+        {/* Tabs for Analytics and Knowledge Base */}
+        <Tabs defaultValue="analytics" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="analytics" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Analytics
+            </TabsTrigger>
+            <TabsTrigger value="knowledge-base" className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4" />
+              Knowledge Base
+            </TabsTrigger>
+            <TabsTrigger value="voice-config" className="flex items-center gap-2">
+              <Volume2 className="h-4 w-4" />
+              Voice Config
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="analytics" className="space-y-6">
+            {/* Period Selector for Analytics */}
+            <div className="flex justify-end">
+              <Select value={selectedPeriod} onValueChange={handlePeriodChange}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Select period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="quarter">This Quarter</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Analytics Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="border-0 shadow-sm">
             <CardContent className="p-6">
@@ -494,6 +601,259 @@ export default function AgentAnalytics() {
             </Card>
           </div>
         </div>
+          </TabsContent>
+
+          <TabsContent value="knowledge-base" className="space-y-6">
+            {/* Knowledge Base Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Knowledge Base Items</h3>
+                <p className="text-sm text-gray-600 mt-1">Manage agent's knowledge base content</p>
+              </div>
+              <Dialog open={isAddKBDialogOpen} onOpenChange={setIsAddKBDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Item
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[600px]">
+                  <DialogHeader>
+                    <DialogTitle>Add Knowledge Base Item</DialogTitle>
+                    <DialogDescription>
+                      Add a new item to the agent's knowledge base. This can be a FAQ, document, URL reference, or script.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Type</Label>
+                      <Select
+                        value={newKBItem.type}
+                        onValueChange={(value) => setNewKBItem({ ...newKBItem, type: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="faq">
+                            <div className="flex items-center gap-2">
+                              <HelpCircle className="h-4 w-4" />
+                              FAQ
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="document">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4" />
+                              Document
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="url">
+                            <div className="flex items-center gap-2">
+                              <LinkIcon className="h-4 w-4" />
+                              URL Reference
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="script">
+                            <div className="flex items-center gap-2">
+                              <File className="h-4 w-4" />
+                              Script
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Title (Optional)</Label>
+                      <Input
+                        placeholder="Enter title..."
+                        value={newKBItem.title}
+                        onChange={(e) => setNewKBItem({ ...newKBItem, title: e.target.value })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Content *</Label>
+                      <Textarea
+                        placeholder="Enter content..."
+                        value={newKBItem.content}
+                        onChange={(e) => setNewKBItem({ ...newKBItem, content: e.target.value })}
+                        rows={6}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsAddKBDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleAddKBItem}>Add Item</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {/* Knowledge Base List */}
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-6">
+                {knowledgeBase.length > 0 ? (
+                  <div className="space-y-4">
+                    {knowledgeBase.map((item: any) => (
+                      <div key={item.id} className="p-4 border rounded-lg hover:bg-gray-50">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3 flex-1">
+                            <div className="mt-1">
+                              <Badge variant="outline" className="gap-1">
+                                {getKBTypeIcon(item.type)}
+                                {item.type.toUpperCase()}
+                              </Badge>
+                            </div>
+                            <div className="flex-1">
+                              {item.title && (
+                                <h4 className="font-semibold text-sm mb-1">{item.title}</h4>
+                              )}
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.content}</p>
+                              {item.createdAt && (
+                                <p className="text-xs text-gray-500 mt-2">
+                                  Added: {new Date(item.createdAt).toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500 mb-4">No knowledge base items yet</p>
+                    <Button onClick={() => setIsAddKBDialogOpen(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add First Item
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="voice-config" className="space-y-6">
+            <Card className="border-0 shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg">Voice Configuration</CardTitle>
+                <CardDescription>
+                  Customize the agent's voice settings for optimal performance
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Voice Selection */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Voice</Label>
+                    <Select value={voiceConfig.voice} onValueChange={(value) => setVoiceConfig({...voiceConfig, voice: value})}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select voice" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="nova">Nova</SelectItem>
+                        <SelectItem value="shimmer">Shimmer</SelectItem>
+                        <SelectItem value="echo">Echo</SelectItem>
+                        <SelectItem value="onyx">Onyx</SelectItem>
+                        <SelectItem value="fable">Fable</SelectItem>
+                        <SelectItem value="alloy">Alloy</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Language Selection */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Language</Label>
+                    <Select value={voiceConfig.language} onValueChange={(value) => setVoiceConfig({...voiceConfig, language: value})}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select language" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="en-US">English (US)</SelectItem>
+                        <SelectItem value="en-GB">English (UK)</SelectItem>
+                        <SelectItem value="es-ES">Spanish</SelectItem>
+                        <SelectItem value="fr-FR">French</SelectItem>
+                        <SelectItem value="de-DE">German</SelectItem>
+                        <SelectItem value="it-IT">Italian</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Speed */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Speed: {voiceConfig.speed.toFixed(1)}x</Label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.1"
+                      value={voiceConfig.speed}
+                      onChange={(e) => setVoiceConfig({...voiceConfig, speed: parseFloat(e.target.value)})}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-gray-500">Adjust playback speed (0.5x - 2.0x)</p>
+                  </div>
+
+                  {/* Pitch */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Pitch: {voiceConfig.pitch.toFixed(1)}x</Label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.1"
+                      value={voiceConfig.pitch}
+                      onChange={(e) => setVoiceConfig({...voiceConfig, pitch: parseFloat(e.target.value)})}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-gray-500">Adjust voice pitch (0.5x - 2.0x)</p>
+                  </div>
+
+                  {/* Volume */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Volume: {voiceConfig.volume.toFixed(1)}x</Label>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="2.0"
+                      step="0.1"
+                      value={voiceConfig.volume}
+                      onChange={(e) => setVoiceConfig({...voiceConfig, volume: parseFloat(e.target.value)})}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-gray-500">Adjust volume level (0.1x - 2.0x)</p>
+                  </div>
+
+                  {/* Emotion */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Emotion</Label>
+                    <Select value={voiceConfig.emotion} onValueChange={(value) => setVoiceConfig({...voiceConfig, emotion: value})}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select emotion" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="neutral">Neutral</SelectItem>
+                        <SelectItem value="happy">Happy</SelectItem>
+                        <SelectItem value="sad">Sad</SelectItem>
+                        <SelectItem value="excited">Excited</SelectItem>
+                        <SelectItem value="calm">Calm</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-4 border-t">
+                  <Button onClick={handleUpdateVoiceConfig}>
+                    <Volume2 className="h-4 w-4 mr-2" />
+                    Save Voice Configuration
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

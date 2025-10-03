@@ -33,11 +33,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import campaignService from '@/services/campaignService';
+import gobiService, { type PlatformTrunk, type LiveKitTrunk } from '@/services/gobiService';
+import { getTenantId } from '@/utils/tenant';
 import {
   Phone,
   Server,
@@ -55,45 +63,32 @@ import {
   WifiOff,
 } from 'lucide-react';
 
-interface LiveKitTrunk {
-  id: string;
-  name: string;
-  status: string;
-  trunkType: string;
-  livekitTrunkId: string;
-  phoneNumbers?: any[];
-  campaign?: {
-    id: string;
-    name: string;
-  };
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface PlatformTrunk {
-  id: string;
-  name: string;
-  status: string;
-  twilioTrunkSid?: string;
-  isActive: boolean;
-  phoneNumbers?: any[];
-}
-
 export default function TrunksPage() {
   const router = useRouter();
   const [livekitTrunks, setLivekitTrunks] = useState<LiveKitTrunk[]>([]);
   const [platformTrunks, setPlatformTrunks] = useState<PlatformTrunk[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [newTrunkName, setNewTrunkName] = useState('');
-  const [newTrunkDescription, setNewTrunkDescription] = useState('');
-  const [selectedPhoneNumbers, setSelectedPhoneNumbers] = useState<string[]>([]);
-  const [availablePhoneNumbers, setAvailablePhoneNumbers] = useState<any[]>([]);
+
+  // Platform Trunk Dialog States
+  const [createPlatformDialogOpen, setCreatePlatformDialogOpen] = useState(false);
+  const [platformTrunkName, setPlatformTrunkName] = useState('Platform Twilio Trunk');
+  const [platformTrunkDescription, setPlatformTrunkDescription] = useState('');
+  const [platformTrunkRegion, setPlatformTrunkRegion] = useState('us1');
+  const [platformTrunkMaxChannels, setPlatformTrunkMaxChannels] = useState(100);
+
+  // LiveKit Trunk Dialog States
+  const [createLivekitDialogOpen, setCreateLivekitDialogOpen] = useState(false);
+  const [livekitTrunkName, setLivekitTrunkName] = useState('');
+  const [livekitTrunkDescription, setLivekitTrunkDescription] = useState('');
+  const [livekitTrunkRegion, setLivekitTrunkRegion] = useState('us-east-1');
+  const [livekitTrunkType, setLivekitTrunkType] = useState<'INBOUND' | 'OUTBOUND'>('INBOUND');
+  const [livekitMaxConcurrentCalls, setLivekitMaxConcurrentCalls] = useState(10);
 
   // Fetch LiveKit trunks
   const fetchLiveKitTrunks = async () => {
     try {
-      const response = await campaignService.getLiveKitTrunks();
+      const tenantId = getTenantId();
+      const response = await gobiService.trunks.getLiveKitTrunks({ tenantId });
       setLivekitTrunks(response.data || []);
     } catch (error) {
       console.error('Error fetching LiveKit trunks:', error);
@@ -104,21 +99,11 @@ export default function TrunksPage() {
   // Fetch platform trunks
   const fetchPlatformTrunks = async () => {
     try {
-      const trunks = await campaignService.getPlatformTrunks();
-      setPlatformTrunks(trunks);
+      const response = await gobiService.trunks.getPlatformTrunks();
+      setPlatformTrunks(response.data || []);
     } catch (error) {
       console.error('Error fetching platform trunks:', error);
       toast.error('Failed to fetch platform trunks');
-    }
-  };
-
-  // Fetch available phone numbers for trunk assignment
-  const fetchAvailablePhoneNumbers = async () => {
-    try {
-      const numbers = await campaignService.getPhoneNumbers();
-      setAvailablePhoneNumbers(numbers.filter((n: any) => !n.campaignId));
-    } catch (error) {
-      console.error('Error fetching phone numbers:', error);
     }
   };
 
@@ -129,43 +114,82 @@ export default function TrunksPage() {
       await Promise.all([
         fetchLiveKitTrunks(),
         fetchPlatformTrunks(),
-        fetchAvailablePhoneNumbers(),
       ]);
       setIsLoading(false);
     };
     fetchData();
   }, []);
 
-  // Create new LiveKit trunk
-  const handleCreateTrunk = async () => {
+  // Create new Platform Trunk
+  const handleCreatePlatformTrunk = async () => {
     try {
-      const tenantId = localStorage.getItem('tenant_id') || '';
-      await campaignService.createLiveKitTrunk({
-        name: newTrunkName,
-        tenantId,
-        phoneNumbers: selectedPhoneNumbers,
+      await gobiService.trunks.createPlatformTrunk({
+        name: platformTrunkName,
+        description: platformTrunkDescription,
+        twilioRegion: platformTrunkRegion,
+        maxChannels: platformTrunkMaxChannels,
       });
-      toast.success('LiveKit trunk created successfully');
-      setCreateDialogOpen(false);
-      setNewTrunkName('');
-      setNewTrunkDescription('');
-      setSelectedPhoneNumbers([]);
-      fetchLiveKitTrunks();
+      toast.success('Platform trunk created successfully');
+      setCreatePlatformDialogOpen(false);
+      setPlatformTrunkName('Platform Twilio Trunk');
+      setPlatformTrunkDescription('');
+      setPlatformTrunkRegion('us1');
+      setPlatformTrunkMaxChannels(100);
+      fetchPlatformTrunks();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to create trunk');
+      toast.error(error.message || 'Failed to create platform trunk');
     }
   };
 
-  // Delete trunk
-  const handleDeleteTrunk = async (trunkId: string, trunkName: string) => {
-    if (!confirm(`Are you sure you want to delete trunk "${trunkName}"?`)) return;
-
+  // Create new LiveKit trunk
+  const handleCreateLivekitTrunk = async () => {
     try {
-      await campaignService.deleteLiveKitTrunk(trunkId);
-      toast.success('Trunk deleted successfully');
+      const tenantId = getTenantId();
+      await gobiService.trunks.createLiveKitTrunk({
+        name: livekitTrunkName,
+        description: livekitTrunkDescription,
+        tenantId,
+        livekitRegion: livekitTrunkRegion,
+        trunkType: livekitTrunkType,
+        maxConcurrentCalls: livekitMaxConcurrentCalls,
+        codecPreferences: ['PCMU', 'PCMA', 'G722'],
+      });
+      toast.success('LiveKit trunk created successfully');
+      setCreateLivekitDialogOpen(false);
+      setLivekitTrunkName('');
+      setLivekitTrunkDescription('');
+      setLivekitTrunkRegion('us-east-1');
+      setLivekitTrunkType('INBOUND');
+      setLivekitMaxConcurrentCalls(10);
       fetchLiveKitTrunks();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to delete trunk');
+      toast.error(error.message || 'Failed to create LiveKit trunk');
+    }
+  };
+
+  // Delete LiveKit trunk
+  const handleDeleteLivekitTrunk = async (trunkId: string, trunkName: string) => {
+    if (!confirm(`Are you sure you want to delete LiveKit trunk "${trunkName}"?`)) return;
+
+    try {
+      await gobiService.trunks.deleteLiveKitTrunk(trunkId);
+      toast.success('LiveKit trunk deleted successfully');
+      fetchLiveKitTrunks();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete LiveKit trunk');
+    }
+  };
+
+  // Delete Platform trunk
+  const handleDeletePlatformTrunk = async (trunkId: string, trunkName: string) => {
+    if (!confirm(`Are you sure you want to delete platform trunk "${trunkName}"?`)) return;
+
+    try {
+      await gobiService.trunks.deletePlatformTrunk(trunkId);
+      toast.success('Platform trunk deleted successfully');
+      fetchPlatformTrunks();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete platform trunk');
     }
   };
 
@@ -178,6 +202,10 @@ export default function TrunksPage() {
         return <Badge className="bg-blue-100 text-blue-800">Provisioning</Badge>;
       case 'ERROR':
         return <Badge className="bg-red-100 text-red-800">Error</Badge>;
+      case 'INACTIVE':
+        return <Badge className="bg-gray-100 text-gray-800">Inactive</Badge>;
+      case 'MAINTENANCE':
+        return <Badge className="bg-yellow-100 text-yellow-800">Maintenance</Badge>;
       default:
         return <Badge variant="outline">{status || 'Unknown'}</Badge>;
     }
@@ -204,7 +232,7 @@ export default function TrunksPage() {
         <div>
           <h1 className="text-2xl font-bold">Trunk Management</h1>
           <p className="text-gray-600 text-sm mt-1">
-            Manage LiveKit SIP trunks and platform connections
+            Manage Platform Trunks and LiveKit SIP trunks
           </p>
         </div>
         <div className="flex gap-2">
@@ -219,84 +247,6 @@ export default function TrunksPage() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
-          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Trunk
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create LiveKit Trunk</DialogTitle>
-                <DialogDescription>
-                  Set up a new LiveKit SIP trunk for voice communications
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 mt-4">
-                <div>
-                  <Label>Trunk Name</Label>
-                  <Input
-                    placeholder="Enter trunk name"
-                    value={newTrunkName}
-                    onChange={(e) => setNewTrunkName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label>Description (Optional)</Label>
-                  <Textarea
-                    placeholder="Enter trunk description"
-                    value={newTrunkDescription}
-                    onChange={(e) => setNewTrunkDescription(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-                <div>
-                  <Label>Assign Phone Numbers</Label>
-                  <div className="space-y-2 max-h-32 overflow-y-auto border rounded-lg p-3 mt-2">
-                    {availablePhoneNumbers.length > 0 ? (
-                      availablePhoneNumbers.map((phone) => (
-                        <div key={phone.id} className="flex items-center space-x-3">
-                          <input
-                            type="checkbox"
-                            id={phone.id}
-                            checked={selectedPhoneNumbers.includes(phone.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedPhoneNumbers([...selectedPhoneNumbers, phone.id]);
-                              } else {
-                                setSelectedPhoneNumbers(selectedPhoneNumbers.filter(id => id !== phone.id));
-                              }
-                            }}
-                            className="h-4 w-4 text-blue-600"
-                          />
-                          <label htmlFor={phone.id} className="flex-1 cursor-pointer">
-                            <span className="font-mono text-sm">{phone.number}</span>
-                          </label>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-gray-500">No available phone numbers</p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setCreateDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleCreateTrunk}
-                    disabled={!newTrunkName}
-                  >
-                    Create Trunk
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
@@ -353,111 +303,6 @@ export default function TrunksPage() {
         </Card>
       </div>
 
-      {/* LiveKit Trunks Table */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="border-b bg-gray-50/50">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-lg">LiveKit Trunks</CardTitle>
-              <CardDescription className="text-xs">
-                Manage your LiveKit SIP trunk connections
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
-            </div>
-          ) : livekitTrunks.length === 0 ? (
-            <div className="text-center py-12">
-              <Server className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">No LiveKit trunks found</p>
-              <p className="text-sm text-gray-400 mt-1">Create your first trunk to get started</p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>Trunk Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Campaign</TableHead>
-                  <TableHead>Phone Numbers</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {livekitTrunks.map((trunk) => (
-                  <TableRow key={trunk.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(trunk.status)}
-                        {trunk.name}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(trunk.status)}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {trunk.trunkType || 'SIP'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {trunk.campaign ? (
-                        <span className="text-sm">{trunk.campaign.name}</span>
-                      ) : (
-                        <span className="text-gray-400 text-sm">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">
-                        {trunk.phoneNumbers?.length || 0} numbers
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs text-gray-500">
-                        {new Date(trunk.createdAt).toLocaleDateString()}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem>
-                            <Edit className="h-3 w-3 mr-2" />
-                            Edit Trunk
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Phone className="h-3 w-3 mr-2" />
-                            Manage Numbers
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => handleDeleteTrunk(trunk.id, trunk.name)}
-                          >
-                            <Trash2 className="h-3 w-3 mr-2" />
-                            Delete Trunk
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Platform Trunks Table */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="border-b bg-gray-50/50">
@@ -468,13 +313,95 @@ export default function TrunksPage() {
                 System-level trunk connections with Twilio
               </CardDescription>
             </div>
+            <Dialog open={createPlatformDialogOpen} onOpenChange={setCreatePlatformDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Platform Trunk
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Create Platform Trunk</DialogTitle>
+                  <DialogDescription>
+                    Create a new Twilio Elastic SIP trunk for the platform
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 mt-4">
+                  <div>
+                    <Label htmlFor="platformName">Trunk Name</Label>
+                    <Input
+                      id="platformName"
+                      placeholder="Platform Twilio Trunk"
+                      value={platformTrunkName}
+                      onChange={(e) => setPlatformTrunkName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="platformDescription">Description (Optional)</Label>
+                    <Textarea
+                      id="platformDescription"
+                      placeholder="Enter trunk description"
+                      value={platformTrunkDescription}
+                      onChange={(e) => setPlatformTrunkDescription(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="platformRegion">Twilio Region</Label>
+                    <Select value={platformTrunkRegion} onValueChange={setPlatformTrunkRegion}>
+                      <SelectTrigger id="platformRegion">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="us1">US1 (Virginia)</SelectItem>
+                        <SelectItem value="us2">US2 (Oregon)</SelectItem>
+                        <SelectItem value="au1">AU1 (Australia)</SelectItem>
+                        <SelectItem value="dublin">Dublin (Ireland)</SelectItem>
+                        <SelectItem value="tokyo">Tokyo (Japan)</SelectItem>
+                        <SelectItem value="singapore">Singapore</SelectItem>
+                        <SelectItem value="sydney">Sydney (Australia)</SelectItem>
+                        <SelectItem value="ireland">Ireland</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="platformMaxChannels">Max Channels</Label>
+                    <Input
+                      id="platformMaxChannels"
+                      type="number"
+                      min="1"
+                      max="1000"
+                      value={platformTrunkMaxChannels}
+                      onChange={(e) => setPlatformTrunkMaxChannels(parseInt(e.target.value))}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setCreatePlatformDialogOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={handleCreatePlatformTrunk}>
+                      Create Platform Trunk
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {platformTrunks.length === 0 ? (
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          ) : platformTrunks.length === 0 ? (
             <div className="text-center py-12">
               <Server className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500">No platform trunks configured</p>
+              <p className="text-sm text-gray-400 mt-1">Create your first platform trunk to get started</p>
             </div>
           ) : (
             <Table>
@@ -483,7 +410,8 @@ export default function TrunksPage() {
                   <TableHead>Trunk Name</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Twilio SID</TableHead>
-                  <TableHead>Phone Numbers</TableHead>
+                  <TableHead>LiveKit Trunks</TableHead>
+                  <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -514,13 +442,224 @@ export default function TrunksPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">
-                        {trunk.phoneNumbers?.length || 0} numbers
+                        {(trunk as any)._count?.livekitTrunks || 0} trunks
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      <span className="text-xs text-gray-500">
+                        {new Date(trunk.createdAt).toLocaleDateString()}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm">
-                        View Details
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem>
+                            <Edit className="h-3 w-3 mr-2" />
+                            Edit Trunk
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-red-600"
+                            onClick={() => handleDeletePlatformTrunk(trunk.id, trunk.name)}
+                          >
+                            <Trash2 className="h-3 w-3 mr-2" />
+                            Delete Trunk
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* LiveKit Trunks Table */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="border-b bg-gray-50/50">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">LiveKit Trunks</CardTitle>
+              <CardDescription className="text-xs">
+                Manage your LiveKit SIP trunk connections
+              </CardDescription>
+            </div>
+            <Dialog open={createLivekitDialogOpen} onOpenChange={setCreateLivekitDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create LiveKit Trunk
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Create LiveKit Trunk</DialogTitle>
+                  <DialogDescription>
+                    Set up a new LiveKit SIP trunk for voice communications
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 mt-4">
+                  <div>
+                    <Label htmlFor="livekitName">Trunk Name</Label>
+                    <Input
+                      id="livekitName"
+                      placeholder="Enter trunk name"
+                      value={livekitTrunkName}
+                      onChange={(e) => setLivekitTrunkName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="livekitDescription">Description (Optional)</Label>
+                    <Textarea
+                      id="livekitDescription"
+                      placeholder="Enter trunk description"
+                      value={livekitTrunkDescription}
+                      onChange={(e) => setLivekitTrunkDescription(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="livekitType">Trunk Type</Label>
+                    <Select value={livekitTrunkType} onValueChange={(value) => setLivekitTrunkType(value as 'INBOUND' | 'OUTBOUND')}>
+                      <SelectTrigger id="livekitType">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="INBOUND">Inbound</SelectItem>
+                        <SelectItem value="OUTBOUND">Outbound</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="livekitRegion">LiveKit Region</Label>
+                    <Select value={livekitTrunkRegion} onValueChange={setLivekitTrunkRegion}>
+                      <SelectTrigger id="livekitRegion">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="us-east-1">US East (Virginia)</SelectItem>
+                        <SelectItem value="us-west-2">US West (Oregon)</SelectItem>
+                        <SelectItem value="eu-west-1">EU West (Ireland)</SelectItem>
+                        <SelectItem value="ap-southeast-1">Asia Pacific (Singapore)</SelectItem>
+                        <SelectItem value="ap-northeast-1">Asia Pacific (Tokyo)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="livekitMaxCalls">Max Concurrent Calls</Label>
+                    <Input
+                      id="livekitMaxCalls"
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={livekitMaxConcurrentCalls}
+                      onChange={(e) => setLivekitMaxConcurrentCalls(parseInt(e.target.value))}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setCreateLivekitDialogOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleCreateLivekitTrunk}
+                      disabled={!livekitTrunkName}
+                    >
+                      Create LiveKit Trunk
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          ) : livekitTrunks.length === 0 ? (
+            <div className="text-center py-12">
+              <Server className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500">No LiveKit trunks found</p>
+              <p className="text-sm text-gray-400 mt-1">Create your first trunk to get started</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Trunk Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Region</TableHead>
+                  <TableHead>Max Calls</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {livekitTrunks.map((trunk) => (
+                  <TableRow key={trunk.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(trunk.status)}
+                        {trunk.name}
+                      </div>
+                    </TableCell>
+                    <TableCell>{getStatusBadge(trunk.status)}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {trunk.trunkType || 'SIP'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm text-gray-600">
+                        {(trunk as any).livekitRegion || 'us-east-1'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm">{trunk.maxConcurrentCalls || 10}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs text-gray-500">
+                        {new Date(trunk.createdAt).toLocaleDateString()}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem>
+                            <Edit className="h-3 w-3 mr-2" />
+                            Edit Trunk
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-red-600"
+                            onClick={() => handleDeleteLivekitTrunk(trunk.id, trunk.name)}
+                          >
+                            <Trash2 className="h-3 w-3 mr-2" />
+                            Delete Trunk
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))}

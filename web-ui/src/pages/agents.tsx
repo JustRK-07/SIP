@@ -57,6 +57,8 @@ import {
   Eye,
   Rocket,
   BarChart3,
+  Copy,
+  Volume2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
@@ -87,6 +89,14 @@ export default function Agents() {
   const [isDeploying, setIsDeploying] = useState(false);
   const [scriptPreviewAgent, setScriptPreviewAgent] = useState<any>(null);
   const [scriptPreviewOpen, setScriptPreviewOpen] = useState(false);
+  const [testCallDialogOpen, setTestCallDialogOpen] = useState(false);
+  const [testCallAgent, setTestCallAgent] = useState<Agent | null>(null);
+  const [testPhoneNumber, setTestPhoneNumber] = useState("");
+  const [testScenario, setTestScenario] = useState("general");
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [cloneAgent, setCloneAgent] = useState<Agent | null>(null);
+  const [cloneName, setCloneName] = useState("");
+  const [includeKnowledge, setIncludeKnowledge] = useState(true);
   const itemsPerPage = 10;
 
   // State for gobi-main data
@@ -252,6 +262,59 @@ export default function Agents() {
       }
     } catch (error) {
       console.error('Failed to fetch deployment logs:', error);
+    }
+  };
+
+  const handleOpenTestCall = (agent: Agent) => {
+    setTestCallAgent(agent);
+    setTestPhoneNumber("");
+    setTestScenario("general");
+    setTestCallDialogOpen(true);
+  };
+
+  const handleTestCall = async () => {
+    if (!testCallAgent || !testPhoneNumber) {
+      toast.error("Please enter a phone number");
+      return;
+    }
+
+    try {
+      const result = await gobiService.agents.testCall(testCallAgent.id, {
+        testPhoneNumber,
+        scenario: testScenario
+      });
+      toast.success(result.message);
+      setTestCallDialogOpen(false);
+      setTestPhoneNumber("");
+    } catch (error: any) {
+      toast.error(`Failed to initiate test call: ${error.message}`);
+    }
+  };
+
+  const handleOpenClone = (agent: Agent) => {
+    setCloneAgent(agent);
+    setCloneName(`${agent.name} (Copy)`);
+    setIncludeKnowledge(true);
+    setCloneDialogOpen(true);
+  };
+
+  const handleCloneAgent = async () => {
+    if (!cloneAgent || !cloneName.trim()) {
+      toast.error("Please enter a name for the cloned agent");
+      return;
+    }
+
+    try {
+      const result = await gobiService.agents.clone(cloneAgent.id, {
+        name: cloneName,
+        includeKnowledge
+      });
+      toast.success(result.message);
+      setCloneDialogOpen(false);
+      setCloneName("");
+      await fetchAgents();
+    } catch (error: any) {
+      toast.error(`Failed to clone agent: ${error.message}`);
     }
   };
 
@@ -1008,9 +1071,13 @@ export default function Agents() {
                                   Deploying...
                                 </DropdownMenuItem>
                               )}
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenTestCall(agent)}>
                                 <Phone className="h-4 w-4 mr-2" />
                                 Test Call
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenClone(agent)}>
+                                <Copy className="h-4 w-4 mr-2" />
+                                Clone Agent
                               </DropdownMenuItem>
                               <DropdownMenuItem>
                                 <MessageSquare className="h-4 w-4 mr-2" />
@@ -1315,6 +1382,102 @@ export default function Agents() {
           }}
         />
       )}
+
+      {/* Test Call Dialog */}
+      <Dialog open={testCallDialogOpen} onOpenChange={setTestCallDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Test Call - {testCallAgent?.name}</DialogTitle>
+            <DialogDescription>
+              Initiate a test call to verify your agent's functionality
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="testPhoneNumber">Phone Number *</Label>
+              <Input
+                id="testPhoneNumber"
+                placeholder="+1234567890"
+                value={testPhoneNumber}
+                onChange={(e) => setTestPhoneNumber(e.target.value)}
+              />
+              <p className="text-xs text-gray-500">Include country code (e.g., +1 for US)</p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="testScenario">Test Scenario</Label>
+              <Select value={testScenario} onValueChange={setTestScenario}>
+                <SelectTrigger id="testScenario">
+                  <SelectValue placeholder="Select scenario" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="general">General Conversation</SelectItem>
+                  <SelectItem value="sales">Sales Pitch</SelectItem>
+                  <SelectItem value="support">Customer Support</SelectItem>
+                  <SelectItem value="appointment">Appointment Booking</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setTestCallDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleTestCall} disabled={!testPhoneNumber}>
+              <Phone className="h-4 w-4 mr-2" />
+              Initiate Test Call
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clone Agent Dialog */}
+      <Dialog open={cloneDialogOpen} onOpenChange={setCloneDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Clone Agent - {cloneAgent?.name}</DialogTitle>
+            <DialogDescription>
+              Create a copy of this agent with all its configurations
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="cloneName">New Agent Name *</Label>
+              <Input
+                id="cloneName"
+                placeholder="Enter name for cloned agent"
+                value={cloneName}
+                onChange={(e) => setCloneName(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="includeKnowledge"
+                checked={includeKnowledge}
+                onChange={(e) => setIncludeKnowledge(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <Label htmlFor="includeKnowledge" className="text-sm font-normal cursor-pointer">
+                Include knowledge base items
+              </Label>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-800">
+                The cloned agent will inherit all configurations including prompt, voice settings, and model parameters.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setCloneDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCloneAgent} disabled={!cloneName.trim()}>
+              <Copy className="h-4 w-4 mr-2" />
+              Clone Agent
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

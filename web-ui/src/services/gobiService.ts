@@ -405,17 +405,16 @@ class TrunksService extends BaseGobiService {
     return getTenantId();
   }
 
-  async getPlatformTrunks(): Promise<{ data: PlatformTrunk[] }> {
-    const url = this.buildUrl('/api/platform-trunks');
+  async getPlatformTrunks(params?: { page?: number; limit?: number; search?: string; isActive?: boolean; sortBy?: string; sortOrder?: string }): Promise<{ data: PlatformTrunk[]; pagination?: any }> {
+    const url = this.buildUrl('/api/platform-trunks', params);
     const headers = await this.getAuthHeaders();
 
     const response = await fetch(url, { headers });
     return this.handleResponse(response);
   }
 
-  async getLiveKitTrunks(): Promise<{ data: LiveKitTrunk[] }> {
-    const tenantId = this.getTenantId();
-    const url = this.buildUrl(`/api/tenants/${tenantId}/livekit-trunks`);
+  async getLiveKitTrunks(params?: { tenantId?: string; page?: number; limit?: number; search?: string; status?: string }): Promise<{ data: LiveKitTrunk[]; pagination?: any }> {
+    const url = this.buildUrl('/api/livekit-trunks', params);
     const headers = await this.getAuthHeaders();
 
     const response = await fetch(url, { headers });
@@ -434,7 +433,7 @@ class TrunksService extends BaseGobiService {
   }
 
   // Platform Trunk CRUD
-  async getPlatformTrunkById(id: string): Promise<{ data: PlatformTrunk }> {
+  async getPlatformTrunkById(id: string): Promise<PlatformTrunk> {
     const url = this.buildUrl(`/api/platform-trunks/${id}`);
     const headers = await this.getAuthHeaders();
 
@@ -442,7 +441,7 @@ class TrunksService extends BaseGobiService {
     return this.handleResponse(response);
   }
 
-  async createPlatformTrunk(data: { name: string; uri: string; username?: string; password?: string; authDomain?: string }): Promise<{ message: string; platformTrunk: PlatformTrunk }> {
+  async createPlatformTrunk(data: { name?: string; description?: string; twilioRegion?: string; maxChannels?: number }): Promise<PlatformTrunk> {
     const url = this.buildUrl('/api/platform-trunks');
     const headers = await this.getAuthHeaders();
 
@@ -454,7 +453,7 @@ class TrunksService extends BaseGobiService {
     return this.handleResponse(response);
   }
 
-  async updatePlatformTrunk(id: string, data: { name?: string; uri?: string; username?: string; password?: string; authDomain?: string }): Promise<{ message: string; platformTrunk: PlatformTrunk }> {
+  async updatePlatformTrunk(id: string, data: { name?: string; description?: string; twilioRegion?: string; maxChannels?: number; isActive?: boolean }): Promise<PlatformTrunk> {
     const url = this.buildUrl(`/api/platform-trunks/${id}`);
     const headers = await this.getAuthHeaders();
 
@@ -478,18 +477,16 @@ class TrunksService extends BaseGobiService {
   }
 
   // LiveKit Trunk CRUD
-  async getLiveKitTrunkById(id: string): Promise<{ data: LiveKitTrunk }> {
-    const tenantId = this.getTenantId();
-    const url = this.buildUrl(`/api/tenants/${tenantId}/livekit-trunks/${id}`);
+  async getLiveKitTrunkById(id: string): Promise<LiveKitTrunk> {
+    const url = this.buildUrl(`/api/livekit-trunks/${id}`);
     const headers = await this.getAuthHeaders();
 
     const response = await fetch(url, { headers });
     return this.handleResponse(response);
   }
 
-  async createLiveKitTrunk(data: { name: string; description?: string; trunkType: 'INBOUND' | 'OUTBOUND'; platformTrunkId?: string }): Promise<{ message: string; livekitTrunk: LiveKitTrunk }> {
-    const tenantId = this.getTenantId();
-    const url = this.buildUrl(`/api/tenants/${tenantId}/livekit-trunks`);
+  async createLiveKitTrunk(data: { name: string; description?: string; tenantId: string; livekitRegion?: string; trunkType?: 'INBOUND' | 'OUTBOUND'; maxConcurrentCalls?: number; codecPreferences?: string[] }): Promise<LiveKitTrunk> {
+    const url = this.buildUrl('/api/livekit-trunks');
     const headers = await this.getAuthHeaders();
 
     const response = await fetch(url, {
@@ -500,9 +497,8 @@ class TrunksService extends BaseGobiService {
     return this.handleResponse(response);
   }
 
-  async updateLiveKitTrunk(id: string, data: { name?: string; description?: string; status?: string; maxConcurrentCalls?: number }): Promise<{ message: string; livekitTrunk: LiveKitTrunk }> {
-    const tenantId = this.getTenantId();
-    const url = this.buildUrl(`/api/tenants/${tenantId}/livekit-trunks/${id}`);
+  async updateLiveKitTrunk(id: string, data: { name?: string; description?: string; status?: string; livekitRegion?: string; maxConcurrentCalls?: number; codecPreferences?: string[]; isActive?: boolean }): Promise<LiveKitTrunk> {
+    const url = this.buildUrl(`/api/livekit-trunks/${id}`);
     const headers = await this.getAuthHeaders();
 
     const response = await fetch(url, {
@@ -514,8 +510,7 @@ class TrunksService extends BaseGobiService {
   }
 
   async deleteLiveKitTrunk(id: string): Promise<{ message: string }> {
-    const tenantId = this.getTenantId();
-    const url = this.buildUrl(`/api/tenants/${tenantId}/livekit-trunks/${id}`);
+    const url = this.buildUrl(`/api/livekit-trunks/${id}`);
     const headers = await this.getAuthHeaders();
 
     const response = await fetch(url, {
@@ -832,7 +827,7 @@ class AgentsService extends BaseGobiService {
     return this.handleResponse(response);
   }
 
-  async testCall(id: string, data: { phoneNumber?: string; testScenario?: string }): Promise<{ message: string; callSid?: string; status?: string }> {
+  async testCall(id: string, data: { testPhoneNumber: string; scenario?: string }): Promise<{ message: string; callId: string; status: string; estimatedDuration: string }> {
     const url = this.buildUrl(`/api/agents/${id}/test-call`);
     const headers = await this.getAuthHeaders();
 
@@ -844,7 +839,7 @@ class AgentsService extends BaseGobiService {
     return this.handleResponse(response);
   }
 
-  async clone(id: string, data: { name: string; description?: string }): Promise<{ message: string; agent: Agent; originalAgentId: string }> {
+  async clone(id: string, data: { name: string; includeKnowledge?: boolean }): Promise<{ message: string; agent: Agent; sourceAgentId: string }> {
     const url = this.buildUrl(`/api/agents/${id}/clone`);
     const headers = await this.getAuthHeaders();
 
@@ -856,7 +851,7 @@ class AgentsService extends BaseGobiService {
     return this.handleResponse(response);
   }
 
-  async updateVoiceConfig(id: string, data: { voice?: string; speed?: number; pitch?: number; volume?: number; language?: string }): Promise<{ message: string; agent: Agent }> {
+  async updateVoiceConfig(id: string, data: { voice?: string; speed?: number; pitch?: number; volume?: number; language?: string; emotion?: string }): Promise<{ message: string; voiceConfig: any }> {
     const url = this.buildUrl(`/api/agents/${id}/voice-config`);
     const headers = await this.getAuthHeaders();
 
@@ -868,7 +863,7 @@ class AgentsService extends BaseGobiService {
     return this.handleResponse(response);
   }
 
-  async getKnowledgeBase(id: string): Promise<{ documents: any[]; totalDocuments: number; lastUpdated?: string }> {
+  async getKnowledgeBase(id: string): Promise<{ agentId: string; knowledgeBase: any[]; totalItems: number }> {
     const url = this.buildUrl(`/api/agents/${id}/knowledge-base`);
     const headers = await this.getAuthHeaders();
 
@@ -876,7 +871,7 @@ class AgentsService extends BaseGobiService {
     return this.handleResponse(response);
   }
 
-  async uploadKnowledgeBase(id: string, data: { documents: any[]; type?: string }): Promise<{ message: string; documentsUploaded: number }> {
+  async addKnowledgeBaseItem(id: string, data: { type: string; title?: string; content: string; metadata?: any }): Promise<{ message: string; item: any }> {
     const url = this.buildUrl(`/api/agents/${id}/knowledge-base`);
     const headers = await this.getAuthHeaders();
 

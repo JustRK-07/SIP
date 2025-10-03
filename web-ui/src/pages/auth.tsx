@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AiOutlineUser, AiOutlineLock, AiOutlineLoading3Quarters } from "react-icons/ai";
@@ -138,13 +139,30 @@ export default function Auth() {
                   )}
                 </Button>
 
-                <div className="pt-4 text-center border-t border-slate-200 dark:border-slate-700/50">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Test Credentials
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Username: qateam@ytel.com | Password: password123
-                  </p>
+                <div className="pt-4 space-y-3 border-t border-slate-200 dark:border-slate-700/50">
+                  <div className="text-center">
+                    <Link href="/forgot-password" className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                      Forgot password?
+                    </Link>
+                  </div>
+
+                  <div className="text-center">
+                    <p className="text-sm text-slate-600 dark:text-slate-400">
+                      Don't have an account?{" "}
+                      <Link href="/register" className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                        Sign up
+                      </Link>
+                    </p>
+                  </div>
+
+                  <div className="text-center pt-3 border-t border-slate-200 dark:border-slate-700/50">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Test Credentials
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Username: qateam@ytel.com | Password: password123
+                    </p>
+                  </div>
                 </div>
               </form>
             </CardContent>
