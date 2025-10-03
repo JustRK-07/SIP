@@ -3,7 +3,7 @@ const { authenticateToken } = require('../middleware/auth');
 const DatabaseService = require('../services/DatabaseService');
 const ResponseService = require('../services/ResponseService');
 const ValidationService = require('../services/ValidationService');
-const { parse } = require('csv-parse').parse;
+const { parse } = require('csv-parse/sync');
 
 const router = express.Router();
 const prisma = DatabaseService.getClient();

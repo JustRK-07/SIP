@@ -106,7 +106,7 @@ class AuthManager {
 
         // If we're in a Next.js app, redirect to login
         if (typeof window !== 'undefined') {
-          window.location.href = '/auth/login';
+          window.location.href = '/auth';
         }
 
         throw new Error('Failed to refresh token');

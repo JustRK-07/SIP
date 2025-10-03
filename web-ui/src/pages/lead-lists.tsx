@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import { gobiService, type LeadList as LeadListType } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -65,6 +66,7 @@ type Lead = {
 };
 
 export default function LeadLists() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -74,6 +76,7 @@ export default function LeadLists() {
   const [selectedList, setSelectedList] = useState<LeadList | null>(null);
   const [newListName, setNewListName] = useState("");
   const [newListDescription, setNewListDescription] = useState("");
+  const [newListCsvFile, setNewListCsvFile] = useState<File | null>(null);
   const [editListName, setEditListName] = useState("");
   const [editListDescription, setEditListDescription] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -145,16 +148,67 @@ export default function LeadLists() {
 
     setIsCreating(true);
     try {
-      await gobiService.leadLists.create({
+      // Step 1: Create the lead list
+      console.log("Creating lead list:", newListName);
+      const response = await gobiService.leadLists.create({
         name: newListName,
         description: newListDescription || undefined,
       });
+
+      console.log("Lead list created:", response);
+      const listId = response?.data?.id;
+
+      if (!listId) {
+        throw new Error("Failed to get list ID from response");
+      }
+
       toast.success("Lead list created successfully!");
+
+      // Step 2: If CSV file is provided, upload leads
+      if (newListCsvFile) {
+        try {
+          console.log("Uploading CSV file:", newListCsvFile.name);
+          const reader = new FileReader();
+          const csvContent = await new Promise<string>((resolve, reject) => {
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsText(newListCsvFile);
+          });
+
+          console.log("CSV content read, uploading to list:", listId);
+          const uploadResponse = await gobiService.leadLists.uploadLeads({
+            listId: listId,
+            content: csvContent,
+          });
+
+          console.log("Upload response:", uploadResponse);
+          const leadsUploaded = uploadResponse?.data?.newLeads || uploadResponse?.newLeads || 0;
+
+          toast.success(
+            `Successfully uploaded ${leadsUploaded} leads to the list!`
+          );
+
+          // Navigate to detail page to show uploaded leads
+          console.log("Navigating to list detail page:", listId);
+          router.push(`/lead-lists/${listId}`);
+        } catch (uploadError: any) {
+          console.error("CSV upload error:", uploadError);
+          toast.error(`List created but CSV upload failed: ${uploadError.message}`);
+          // Still navigate to list page even if upload fails
+          router.push(`/lead-lists/${listId}`);
+        }
+      } else {
+        // No CSV file, just refresh the list
+        await fetchLeadLists();
+      }
+
+      // Reset form
       setNewListName("");
       setNewListDescription("");
+      setNewListCsvFile(null);
       setCreateDialogOpen(false);
-      await fetchLeadLists();
     } catch (error: any) {
+      console.error("Create list error:", error);
       toast.error(`Failed to create list: ${error.message}`);
     } finally {
       setIsCreating(false);
@@ -169,6 +223,7 @@ export default function LeadLists() {
 
     setIsUploading(true);
     try {
+      console.log("Uploading CSV to list:", selectedList.id);
       const reader = new FileReader();
       const csvContent = await new Promise<string>((resolve, reject) => {
         reader.onload = (e) => resolve(e.target?.result as string);
@@ -176,17 +231,31 @@ export default function LeadLists() {
         reader.readAsText(csvFile);
       });
 
+      console.log("CSV content read, uploading...");
       const response = await gobiService.leadLists.uploadLeads({
         listId: selectedList.id,
         content: csvContent,
       });
 
-      toast.success(`Successfully uploaded leads!`);
+      console.log("Upload response:", response);
+      const leadsUploaded = response?.data?.newLeads || response?.newLeads || 0;
+
+      toast.success(`Successfully uploaded ${leadsUploaded} leads!`);
+
+      // Reset state
       setCsvFile(null);
       setUploadDialogOpen(false);
+      const listId = selectedList.id;
       setSelectedList(null);
+
+      // Refresh list data
       await fetchLeadLists();
+
+      // Navigate to detail page to show uploaded leads
+      console.log("Navigating to list detail page:", listId);
+      router.push(`/lead-lists/${listId}`);
     } catch (error: any) {
+      console.error("Upload error:", error);
       toast.error(`Failed to upload leads: ${error.message}`);
     } finally {
       setIsUploading(false);
@@ -297,12 +366,12 @@ export default function LeadLists() {
                 <DialogHeader>
                   <DialogTitle>Create New Lead List</DialogTitle>
                   <DialogDescription>
-                    Create a new list to organize your leads
+                    Create a new list to organize your leads. Optionally upload a CSV file with leads.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 mt-4">
                   <div>
-                    <Label>List Name</Label>
+                    <Label>List Name *</Label>
                     <Input
                       placeholder="Enter list name"
                       value={newListName}
@@ -318,12 +387,57 @@ export default function LeadLists() {
                       rows={3}
                     />
                   </div>
+                  <div className="border-t pt-4">
+                    <Label className="flex items-center gap-2 mb-2">
+                      <Upload className="h-4 w-4" />
+                      Upload Leads (Optional)
+                    </Label>
+                    <Input
+                      type="file"
+                      accept=".csv"
+                      onChange={(e) => setNewListCsvFile(e.target.files?.[0] || null)}
+                      className="cursor-pointer"
+                    />
+                    {newListCsvFile && (
+                      <div className="mt-2 flex items-center gap-2 text-sm text-green-600">
+                        <FileSpreadsheet className="h-4 w-4" />
+                        <span>{newListCsvFile.name}</span>
+                        <button
+                          onClick={() => setNewListCsvFile(null)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">
+                      CSV format: name, phoneNumber, email (phoneNumber is required)
+                    </p>
+                  </div>
                   <div className="flex justify-end space-x-2">
-                    <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setCreateDialogOpen(false);
+                        setNewListName("");
+                        setNewListDescription("");
+                        setNewListCsvFile(null);
+                      }}
+                    >
                       Cancel
                     </Button>
                     <Button onClick={handleCreateList} disabled={isCreating}>
-                      {isCreating ? "Creating..." : "Create List"}
+                      {isCreating ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          {newListCsvFile ? "Creating & Uploading..." : "Creating..."}
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Create List
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -447,7 +561,12 @@ export default function LeadLists() {
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <FileSpreadsheet className="h-4 w-4 text-gray-400" />
-                            <span>{list.name}</span>
+                            <button
+                              onClick={() => router.push(`/lead-lists/${list.id}`)}
+                              className="hover:text-blue-600 hover:underline text-left"
+                            >
+                              {list.name}
+                            </button>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -500,11 +619,10 @@ export default function LeadLists() {
                               <DropdownMenuLabel>Actions</DropdownMenuLabel>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => {
-                                setSelectedList(list);
-                                setViewDialogOpen(true);
+                                router.push(`/lead-lists/${list.id}`);
                               }}>
                                 <Eye className="h-4 w-4 mr-2" />
-                                View Leads
+                                View Details
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => {
                                 setSelectedList(list);

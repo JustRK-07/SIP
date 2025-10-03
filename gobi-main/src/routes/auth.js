@@ -112,6 +112,12 @@ router.post('/login', loginLimiter, async (req, res) => {
       return ResponseService.forbidden(res, 'Your organization account is inactive');
     }
 
+    // Validate user has a tenant (required for multi-tenant system)
+    const tenantId = user.tenantId || user.tenant?.id;
+    if (!tenantId) {
+      return ResponseService.forbidden(res, 'User account is not associated with an organization. Please contact support.');
+    }
+
     // Generate user hash for token validation
     const uHash = crypto
       .createHash('sha512')
@@ -127,8 +133,8 @@ router.post('/login', loginLimiter, async (req, res) => {
     const tokenPayload = {
       sub: user.id,
       uHash: uHash,
-      pAcct: user.tenantId || user.tenant?.id,
-      acct: user.tenantId || user.tenant?.id,
+      pAcct: tenantId,
+      acct: tenantId,
       privs: permissions,
       username: user.email || user.username,
       scope: 'ROLE_ACCESS_TOKEN',
@@ -270,6 +276,12 @@ router.post('/refresh', async (req, res) => {
       return ResponseService.unauthorized(res, 'Invalid or expired refresh token');
     }
 
+    // Validate user has a tenant
+    const tenantId = storedToken.user.tenantId || storedToken.user.tenant?.id;
+    if (!tenantId) {
+      return ResponseService.forbidden(res, 'User account is not associated with an organization. Please contact support.');
+    }
+
     // Convert BigInt permissions to numbers for JWT serialization
     const permissions = storedToken.user.permissions ?
       storedToken.user.permissions.map(p => Number(p)) :
@@ -279,8 +291,8 @@ router.post('/refresh', async (req, res) => {
     const tokenPayload = {
       sub: storedToken.user.id,
       uHash: decoded.uHash,
-      pAcct: storedToken.user.tenantId,
-      acct: storedToken.user.tenantId,
+      pAcct: tenantId,
+      acct: tenantId,
       privs: permissions,
       username: storedToken.user.email || storedToken.user.username,
       scope: 'ROLE_ACCESS_TOKEN',

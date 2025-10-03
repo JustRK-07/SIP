@@ -106,7 +106,7 @@ export default function AgentManagementContent() {
     const interval = setInterval(() => {
       fetchAgents();
       fetchStats();
-    }, 5000); // Refresh every 5 seconds
+    }, 15000); // Refresh every 15 seconds
     return () => clearInterval(interval);
   }, []);
 
@@ -170,10 +170,13 @@ export default function AgentManagementContent() {
 
   const handleDeleteAgent = async (agentId: string) => {
     try {
+      console.log('Attempting to delete agent:', agentId);
       const result = await gobiService.agents.delete(agentId);
+      console.log('Delete result:', result);
       await fetchAgents();
-      toast.success(result.message);
+      toast.success(result.message || 'Agent deleted successfully');
     } catch (error: any) {
+      console.error('Delete agent error:', error);
       toast.error(error.message || "Failed to delete agent");
     }
   };
@@ -801,12 +804,14 @@ export default function AgentManagementContent() {
                       >
                         <Settings className="h-3 w-3" />
                       </Button>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="outline"
-                        onClick={() => handleDeleteAgent(agent.id, agent.name)}
+                        onClick={() => handleDeleteAgentConfirm(agent.id, agent.name)}
+                        className="hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                        title="Delete Agent"
                       >
-                        <Square className="h-3 w-3" />
+                        <XCircle className="h-3 w-3" />
                       </Button>
                     </div>
                   </div>
