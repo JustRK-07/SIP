@@ -500,6 +500,27 @@ router.post('/register', registrationLimiter, async (req, res) => {
     const bcrypt = require('bcryptjs');
     const passwordHash = await bcrypt.hash(password, 10);
 
+    // If no tenantId provided, get or create default tenant
+    let finalTenantId = tenantId;
+    if (!finalTenantId) {
+      let defaultTenant = await prisma.tenant.findFirst({
+        where: { domain: 'default' }
+      });
+
+      if (!defaultTenant) {
+        // Create default tenant if it doesn't exist
+        defaultTenant = await prisma.tenant.create({
+          data: {
+            name: 'Default Organization',
+            domain: 'default',
+            isActive: true
+          }
+        });
+      }
+
+      finalTenantId = defaultTenant.id;
+    }
+
     // Create user
     const user = await prisma.user.create({
       data: {
@@ -510,7 +531,7 @@ router.post('/register', registrationLimiter, async (req, res) => {
         lastName: lastName.trim(),
         isActive: true,
         permissions: [], // Default empty permissions, admin can assign later
-        tenantId: tenantId || null
+        tenantId: finalTenantId
       },
       include: {
         tenant: {

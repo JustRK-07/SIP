@@ -160,7 +160,7 @@ export default function Auth() {
                       Test Credentials
                     </p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Username: qateam@ytel.com | Password: password123
+                      Username: demo@ytel.com | Password: password123
                     </p>
                   </div>
                 </div>

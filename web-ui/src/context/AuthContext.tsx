@@ -62,6 +62,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const tokenData = parseJwt(storedToken);
       if (tokenData) {
         const now = Date.now() / 1000;
+
+        // Validate token has required claims
+        if (!tokenData.acct) {
+          console.warn('Token missing tenant information, clearing invalid token');
+          clearTokens();
+          setIsLoading(false);
+          return;
+        }
+
         if (tokenData.exp > now) {
           // Token is valid
           setAccessToken(storedToken);
@@ -78,16 +87,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, []);
 
+  // Define public pages that don't require authentication
+  const PUBLIC_PAGES = ['/auth', '/register', '/forgot-password', '/reset-password'];
+
   useEffect(() => {
-    // Only redirect if we're done loading and not authenticated
-    if (!isLoading && !isAuthenticated && router.pathname !== "/auth") {
+    // Only redirect if we're done loading and not authenticated and page requires auth
+    if (!isLoading && !isAuthenticated && !PUBLIC_PAGES.includes(router.pathname)) {
       router.push("/auth");
     }
     // Redirect to dashboard if authenticated and on auth page
     if (!isLoading && isAuthenticated && router.pathname === "/auth") {
       router.push("/");
     }
-  }, [isAuthenticated, isLoading, router.pathname]);
+  }, [isLoading, isAuthenticated, router.pathname]);
 
   const refreshTokenIfNeeded = async () => {
     const refreshToken = localStorage.getItem("refresh_token");
