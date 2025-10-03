@@ -119,7 +119,7 @@ export interface CreateCampaignData {
   name: string;
   description?: string;
   campaignType?: 'INBOUND' | 'OUTBOUND';
-  agentName?: string;
+  agentIds?: string[];
   numberIds?: string[];
 }
 
@@ -547,6 +547,7 @@ export interface CreateLeadListData {
 export interface UploadLeadsData {
   listId: string;
   content: string;
+  campaignId?: string;
 }
 
 class LeadListService extends BaseGobiService {
@@ -569,7 +570,7 @@ class LeadListService extends BaseGobiService {
     return this.handleResponse(response);
   }
 
-  async create(data: CreateLeadListData): Promise<LeadList> {
+  async create(data: CreateLeadListData): Promise<{ data: LeadList; message: string }> {
     const url = this.buildUrl('/api/lead-lists');
     const headers = await this.getAuthHeaders();
 
@@ -585,10 +586,15 @@ class LeadListService extends BaseGobiService {
     const url = this.buildUrl(`/api/lead-lists/${data.listId}/upload`);
     const headers = await this.getAuthHeaders();
 
+    const requestBody: any = { content: data.content };
+    if (data.campaignId) {
+      requestBody.campaignId = data.campaignId;
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ content: data.content }),
+      body: JSON.stringify(requestBody),
     });
     return this.handleResponse(response);
   }

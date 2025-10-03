@@ -1,15 +1,19 @@
-# Gobi - Tenant Management API
+# GOBI Backend API
 
-A Node.js REST API for tenant management with JWT authentication, built with Express, Prisma, and PostgreSQL.
+AI-powered voice agent platform with LiveKit integration for real-time SIP calling and automated outbound/inbound campaigns.
 
 ## Features
 
-- 🏢 **Comprehensive Tenant Management**: Full CRUD operations for tenants
-- 🔐 **JWT Authentication**: Token validation using external public keys
-- 🛡️ **Role-based Access Control**: Admin and tenant-manager roles
-- 📊 **Pagination & Filtering**: Advanced search and sorting capabilities
+- 🤖 **AI Voice Agents**: Create and deploy AI agents with configurable models, voices, and prompts
+- 📞 **Campaign Management**: Inbound/Outbound call campaigns with agent and lead list assignment
+- 📋 **Lead List Management**: Import leads via CSV, organize contacts, assign to campaigns
+- ☎️ **Phone Number Provisioning**: Purchase and manage SIP phone numbers
+- 💓 **Agent Heartbeat Monitoring**: Real-time agent status with automatic timeout detection (90s)
+- 🔗 **LiveKit Integration**: SIP trunk creation and dispatch rule management
+- 🏢 **Multi-tenancy**: Tenant-scoped data isolation
+- 🔐 **JWT Authentication**: Secure token-based authentication
 - 🗄️ **PostgreSQL Database**: Robust data persistence with Prisma ORM
-- 🚀 **Production Ready**: Error handling, logging, and graceful shutdown
+- 📊 **Analytics Ready**: Call metrics, agent performance tracking
 
 ## Tech Stack
 

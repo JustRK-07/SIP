@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { gobiService } from "@/services/gobiService";
-import type { Campaign as GobiCampaign, PhoneNumber, CreateCampaignData } from "@/services/gobiService";
+import type { Campaign as GobiCampaign, PhoneNumber, CreateCampaignData, Agent } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -95,6 +95,9 @@ export default function Campaigns() {
   // Gobi-main lead lists
   const [leadLists, setLeadLists] = useState<LeadList[]>([]);
 
+  // Gobi-main agents
+  const [agents, setAgents] = useState<Agent[]>([]);
+
   // Fetch campaigns from gobi-main
   const fetchCampaigns = async () => {
     setIsLoading(true);
@@ -129,10 +132,21 @@ export default function Campaigns() {
     }
   };
 
+  // Fetch agents from gobi-main
+  const fetchAgents = async () => {
+    try {
+      const response = await gobiService.agents.getAll({ status: 'ACTIVE' });
+      setAgents(response.agents || []);
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+    }
+  };
+
   useEffect(() => {
     fetchCampaigns();
     fetchPhoneNumbers();
     fetchLeadLists();
+    fetchAgents();
   }, []);
 
   const handleCreateCampaign = async () => {
@@ -147,7 +161,7 @@ export default function Campaigns() {
         name: newCampaignName,
         description: newCampaignDescription,
         campaignType,
-        agentName: selectedAgent || undefined,
+        agentIds: selectedAgent ? [selectedAgent] : undefined,
         numberIds: selectedPhoneNumbers.length > 0 ? selectedPhoneNumbers : undefined,
       };
 
@@ -339,12 +353,25 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
                   </div>
 
                   <div>
-                    <Label>AI Agent Name (Optional)</Label>
-                    <Input
-                      placeholder="Enter agent name (e.g., sales-agent)"
-                      value={selectedAgent}
-                      onChange={(e) => setSelectedAgent(e.target.value)}
-                    />
+                    <Label>Assign AI Agent (Optional)</Label>
+                    <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an active agent" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {agents && agents.length > 0 ? (
+                          agents.map((agent) => (
+                            <SelectItem key={agent.id} value={agent.id}>
+                              {agent.name}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="_none" disabled>
+                            No active agents available
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
                     <p className="text-xs text-gray-500 mt-1">Agent will be assigned to handle calls</p>
                   </div>
 
@@ -408,7 +435,7 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
                             <label htmlFor={list.id} className="flex-1 cursor-pointer">
                               <div className="flex items-center justify-between">
                                 <span className="font-medium text-gray-900">{list.name}</span>
-                                <span className="text-sm text-gray-500">{list.totalLeads || 0} leads</span>
+                                <span className="text-sm text-gray-500">{list._count?.leads || 0} leads</span>
                               </div>
                               {list.description && (
                                 <p className="text-sm text-gray-600">{list.description}</p>

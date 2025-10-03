@@ -211,7 +211,7 @@ router.post('/:tenantId/campaigns', authenticateToken, requireTenantAccess, asyn
       return;
     }
 
-    const { name, agentName, description, campaignType = 'INBOUND', numberIds } = req.body;
+    const { name, agentIds, description, campaignType = 'INBOUND', numberIds } = req.body;
 
     // Validate numberIds array if provided
     let validatedPhoneNumbers = [];
@@ -273,6 +273,68 @@ router.post('/:tenantId/campaigns', authenticateToken, requireTenantAccess, asyn
       }
     }
 
+    // Validate agentIds array if provided
+    let validatedAgents = [];
+    let primaryAgentName = null;
+    if (agentIds !== undefined) {
+      if (!Array.isArray(agentIds)) {
+        return res.status(400).json({
+          error: {
+            message: 'agentIds must be an array of agent IDs',
+            code: 'VALIDATION_ERROR'
+          }
+        });
+      }
+
+      // Validate each agentId in the array is a string
+      for (let i = 0; i < agentIds.length; i++) {
+        if (typeof agentIds[i] !== 'string' || agentIds[i].trim().length === 0) {
+          return res.status(400).json({
+            error: {
+              message: `agentIds array item at index ${i} must be a non-empty string`,
+              code: 'VALIDATION_ERROR'
+            }
+          });
+        }
+      }
+
+      // Validate agents exist and are ACTIVE
+      if (agentIds.length > 0) {
+        const agentRecords = await prisma.agent.findMany({
+          where: {
+            id: { in: agentIds },
+            status: 'ACTIVE'
+          },
+          select: {
+            id: true,
+            name: true,
+            status: true
+          }
+        });
+
+        if (agentRecords.length !== agentIds.length) {
+          const foundIds = agentRecords.map(a => a.id);
+          const missingIds = agentIds.filter(id => !foundIds.includes(id));
+
+          return res.status(400).json({
+            error: {
+              message: 'Some agent IDs are invalid or agents are not ACTIVE',
+              code: 'INVALID_AGENTS',
+              details: {
+                invalidIds: missingIds,
+                validIds: foundIds
+              }
+            }
+          });
+        }
+
+        validatedAgents = agentRecords;
+        // Use first agent's name for dispatch rule (backward compatibility)
+        primaryAgentName = agentRecords[0].name;
+        console.log(`Validated ${validatedAgents.length} agents for campaign`);
+      }
+    }
+
     // Check if campaign with this name already exists for the tenant
     const isUnique = await RouteHelperService.validateUnique(
       'campaign',
@@ -300,6 +362,24 @@ router.post('/:tenantId/campaigns', authenticateToken, requireTenantAccess, asyn
         }
       }
     });
+
+    // Create CampaignAgent records if agents were assigned
+    if (validatedAgents.length > 0) {
+      try {
+        await prisma.campaignAgent.createMany({
+          data: validatedAgents.map((agent, index) => ({
+            campaignId: campaign.id,
+            agentId: agent.id,
+            isActive: true,
+            priority: index + 1
+          }))
+        });
+        console.log(`Created ${validatedAgents.length} CampaignAgent record(s) for campaign ${campaign.id}`);
+      } catch (error) {
+        console.error('Error creating CampaignAgent records:', error);
+        // Continue without failing campaign creation
+      }
+    }
 
     // Automatically create LiveKit trunk based on campaign type
     let livekitTrunk = null;
@@ -394,13 +474,13 @@ router.post('/:tenantId/campaigns', authenticateToken, requireTenantAccess, asyn
 
     // Create dispatch rule for the campaign
     let dispatchRule = null;
-    if (livekitTrunk && livekitTrunk.livekitTrunkId && agentName) {
+    if (livekitTrunk && livekitTrunk.livekitTrunkId && primaryAgentName) {
       try {
-        console.log(`Creating dispatch rule for campaign: ${campaign.name} with agent: ${agentName}`);
-        
+        console.log(`Creating dispatch rule for campaign: ${campaign.name} with agent: ${primaryAgentName}`);
+
         const dispatchRuleResult = await LiveKitService.createDispatchRuleForCampaign(
           campaign,
-          agentName,
+          primaryAgentName,
           livekitTrunk.livekitTrunkId
         );
         
@@ -431,8 +511,8 @@ router.post('/:tenantId/campaigns', authenticateToken, requireTenantAccess, asyn
     } else {
       if (!livekitTrunk || !livekitTrunk.livekitTrunkId) {
         console.warn('No LiveKit trunk available - dispatch rule not created for campaign');
-      } else if (!agentName) {
-        console.log('No agentName provided - dispatch rule creation skipped for campaign');
+      } else if (!primaryAgentName) {
+        console.log('No agent provided - dispatch rule creation skipped for campaign');
       }
     }
 

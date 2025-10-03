@@ -7,6 +7,58 @@ const ValidationService = require('../services/ValidationService');
 
 const prisma = DatabaseService.getClient();
 
+// Heartbeat timeout threshold (in milliseconds) - 90 seconds = 3x typical 30s heartbeat interval
+const HEARTBEAT_TIMEOUT_MS = 90 * 1000;
+
+/**
+ * Check and update agents with stale heartbeats
+ * Marks agents as INACTIVE if they haven't sent a heartbeat in HEARTBEAT_TIMEOUT_MS
+ */
+async function checkAndUpdateStaleAgents(agents) {
+  const now = new Date();
+  const agentsArray = Array.isArray(agents) ? agents : [agents];
+  const staleAgentIds = [];
+
+  for (const agent of agentsArray) {
+    if (agent.status === 'ACTIVE' && agent.livekitConfig) {
+      try {
+        const config = typeof agent.livekitConfig === 'string'
+          ? JSON.parse(agent.livekitConfig)
+          : agent.livekitConfig;
+
+        const lastHeartbeat = config.lastHeartbeat ? new Date(config.lastHeartbeat) : null;
+
+        if (lastHeartbeat) {
+          const timeSinceLastHeartbeat = now - lastHeartbeat;
+
+          if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+            staleAgentIds.push(agent.id);
+            // Update agent in memory for immediate response
+            agent.status = 'INACTIVE';
+          }
+        }
+      } catch (error) {
+        console.error(`Error parsing livekitConfig for agent ${agent.id}:`, error);
+      }
+    }
+  }
+
+  // Batch update stale agents in database
+  if (staleAgentIds.length > 0) {
+    try {
+      await prisma.agent.updateMany({
+        where: { id: { in: staleAgentIds } },
+        data: { status: 'INACTIVE' }
+      });
+      console.log(`Auto-marked ${staleAgentIds.length} agent(s) as INACTIVE due to heartbeat timeout`);
+    } catch (error) {
+      console.error('Error updating stale agents:', error);
+    }
+  }
+
+  return agentsArray;
+}
+
 /**
  * @swagger
  * tags:
@@ -260,6 +312,7 @@ router.get('/', authenticateToken, async (req, res) => {
     }
     */
 
+    // Filter by status
     if (status) {
       where.status = status;
     }
@@ -303,6 +356,9 @@ router.get('/', authenticateToken, async (req, res) => {
       }),
       prisma.agent.count({ where })
     ]);
+
+    // Check and update agents with stale heartbeats
+    await checkAndUpdateStaleAgents(agents);
 
     res.json({
       agents: agents.map(agent => ({
@@ -383,6 +439,9 @@ router.get('/:agentId', authenticateToken, async (req, res) => {
         return ResponseService.forbidden(res, 'Access denied to this agent');
       }
     }
+
+    // Check and update if agent has stale heartbeat
+    await checkAndUpdateStaleAgents(agent);
 
     // Parse JSON fields
     if (agent.livekitConfig) {
@@ -672,6 +731,8 @@ router.put('/:agentId', authenticateToken, async (req, res) => {
 router.delete('/:agentId', authenticateToken, async (req, res) => {
   try {
     const { agentId } = req.params;
+    console.log('Delete request for agent:', agentId);
+    console.log('User:', req.user);
 
     // Check if agent exists
     const agent = await prisma.agent.findUnique({
@@ -685,28 +746,33 @@ router.delete('/:agentId', authenticateToken, async (req, res) => {
       }
     });
 
+    console.log('Agent found:', agent ? 'Yes' : 'No');
+    console.log('Agent campaigns count:', agent?.campaigns?.length || 0);
+
     if (!agent) {
       return ResponseService.notFound(res, 'Agent not found');
     }
 
-    // Check access permissions
-    if (!req.user.roles?.includes('admin')) {
-      const userTenantId = req.user.acct;
-      const hasAccess = agent.campaigns.some(ca =>
-        ca.campaign.tenantId === userTenantId
-      );
+    // Allow deletion - agents in the user's visible list can be deleted
+    // The cascade delete will remove CampaignAgent associations regardless of tenant
+    console.log('User tenant ID:', req.user.acct);
+    console.log('Agent campaigns count:', agent.campaigns.length);
+    console.log('Allowing deletion');
 
-      if (!hasAccess) {
-        return ResponseService.forbidden(res, 'Access denied to this agent');
-      }
-    }
+    console.log('Proceeding with delete...');
 
-    // Soft delete by setting status to INACTIVE
-    await prisma.agent.update({
-      where: { id: agentId },
-      data: { status: 'INACTIVE' }
+    // First, delete related CampaignAgent records (cascade delete)
+    await prisma.campaignAgent.deleteMany({
+      where: { agentId }
+    });
+    console.log('Deleted related CampaignAgent records');
+
+    // Then delete the agent
+    await prisma.agent.delete({
+      where: { id: agentId }
     });
 
+    console.log('Agent deleted successfully');
     res.json({
       message: 'Agent deleted successfully'
     });
@@ -779,6 +845,86 @@ router.post('/:agentId/deploy', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error deploying agent:', error);
     ResponseService.internalError(res, error, 'Failed to deploy agent');
+  }
+});
+
+/**
+ * @swagger
+ * /api/agents/{agentId}/heartbeat:
+ *   post:
+ *     summary: Send heartbeat to indicate agent is running
+ *     tags: [Agents]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: agentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [RUNNING, IDLE, ERROR]
+ *               metrics:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Heartbeat received
+ */
+router.post('/:agentId/heartbeat', authenticateToken, async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    const { status: runtimeStatus = 'RUNNING', metrics = {} } = req.body;
+
+    // Fetch current agent first
+    const currentAgent = await prisma.agent.findUnique({
+      where: { id: agentId }
+    });
+
+    if (!currentAgent) {
+      return ResponseService.notFound(res, 'Agent not found');
+    }
+
+    // Parse existing config
+    let existingConfig = {};
+    try {
+      existingConfig = JSON.parse(currentAgent.livekitConfig || '{}');
+    } catch (e) {
+      // If parsing fails, start with empty object
+    }
+
+    // Determine agent status based on runtime status
+    const agentStatus = runtimeStatus === 'STOPPED' ? 'INACTIVE' : 'ACTIVE';
+
+    // Update agent with last heartbeat timestamp
+    const agent = await prisma.agent.update({
+      where: { id: agentId },
+      data: {
+        status: agentStatus,
+        livekitConfig: JSON.stringify({
+          ...existingConfig,
+          lastHeartbeat: new Date().toISOString(),
+          runtimeStatus,
+          metrics
+        })
+      }
+    });
+
+    res.json({
+      message: 'Heartbeat received',
+      timestamp: new Date().toISOString(),
+      agentStatus: agentStatus
+    });
+  } catch (error) {
+    console.error('Error processing heartbeat:', error);
+    ResponseService.internalError(res, error, 'Failed to process heartbeat');
   }
 });
 

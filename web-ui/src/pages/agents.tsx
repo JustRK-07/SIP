@@ -107,20 +107,7 @@ export default function Agents() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCreatingAgent, setIsCreatingAgent] = useState(false);
 
-  // Initialize cleanup scheduler on component mount
-  useEffect(() => {
-    // Start cleanup scheduler if not already running
-    fetch('/api/init-cleanup', { method: 'POST' })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          console.log('Cleanup scheduler started:', data.message);
-        }
-      })
-      .catch(error => {
-        console.error('Failed to start cleanup scheduler:', error);
-      });
-  }, []);
+  // Removed LocalAgent cleanup scheduler - using gobi-main PostgreSQL Agent system only
 
   // Form state
   const [agentForm, setAgentForm] = useState<AgentForm>({
