@@ -476,8 +476,8 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
           </div>
         </div>
 
-        {/* Compact Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Compact Stats Cards - All in one row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
           <Card className="border-0 shadow-sm">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
@@ -525,10 +525,7 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* LiveKit Trunk Status Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <Card className="border-0 shadow-sm bg-gradient-to-br from-green-50 to-white">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">

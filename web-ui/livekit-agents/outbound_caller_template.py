@@ -37,6 +37,24 @@ logger.setLevel(logging.INFO)
 outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
 
 
+async def prewarm_process(proc):
+    """
+    Prewarm function called when worker connects to LiveKit Cloud
+    Used to load models and verify dependencies before accepting jobs
+    """
+    logger.info("🔥 Prewarming worker process...")
+    logger.info("   Loading AI models and dependencies...")
+
+    # Prewarm VAD model (loads Silero model into memory)
+    try:
+        vad = silero.VAD.load()
+        logger.info("   ✅ VAD model loaded")
+    except Exception as e:
+        logger.warning(f"   ⚠️  VAD prewarm failed: {e}")
+
+    logger.info("🎯 Worker is ready to accept jobs!")
+
+
 class OutboundCaller(Agent):
     def __init__(
         self,
@@ -160,7 +178,16 @@ class OutboundCaller(Agent):
 
 
 async def entrypoint(ctx: JobContext):
-    logger.info(f"connecting to room {{ctx.room.name}}")
+    """
+    LiveKit agent entrypoint - called for each job
+    This is invoked by LiveKit when a job is dispatched to this worker
+    """
+    # Log job acceptance
+    logger.info(f"📋 Job received from LiveKit Cloud")
+    logger.info(f"   Room: {{ctx.room.name if ctx.room else 'N/A'}}")
+    logger.info(f"   Job ID: {{ctx.job.id}}")
+
+    logger.info(f"🔌 Connecting to room {{ctx.room.name}}")
     await ctx.connect()
 
     # when dispatching the agent, we'll pass it the approriate info to dial the user
@@ -232,9 +259,30 @@ async def entrypoint(ctx: JobContext):
 
 
 if __name__ == "__main__":
-    cli.run_app(
-        WorkerOptions(
-            entrypoint_fnc=entrypoint,
-            agent_name="outbound-caller",
-        )
+    logger.info("=" * 60)
+    logger.info(f"🚀 Outbound Caller Agent Worker Starting")
+    logger.info(f"   Model: {model}")
+    logger.info(f"   Temperature: {temperature}")
+    logger.info("=" * 60)
+    logger.info(f"📡 Registering worker with LiveKit Cloud...")
+    logger.info(f"   Waiting for dispatch from LiveKit...")
+    logger.info("=" * 60 + "\\n")
+
+    # Configure worker options with metadata
+    worker_opts = WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        prewarm_fnc=prewarm_process,
+        agent_name="outbound-caller",
     )
+
+    logger.info("✅ Worker configured successfully")
+    logger.info("🔗 Connecting to LiveKit Cloud...\\n")
+
+    # Run LiveKit agent (this blocks and waits for jobs)
+    # This call will:
+    # 1. Connect to LiveKit Cloud
+    # 2. Call prewarm_process() to load models
+    # 3. Register as available worker
+    # 4. Wait for job dispatch
+    # 5. Call entrypoint() for each job received
+    cli.run_app(worker_opts)

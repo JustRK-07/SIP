@@ -279,6 +279,75 @@ class CampaignService extends BaseGobiService {
       lastCheck: new Date().toISOString(),
     };
   }
+
+  // Test Call Methods
+  async initiateTestCall(campaignId: string, phoneNumber: string): Promise<{
+    data: {
+      callSid: string;
+      status: string;
+      from: string;
+      to: string;
+      agent: {
+        id: string;
+        name: string;
+        model: string;
+        voice: string;
+      };
+      campaign: {
+        id: string;
+        name: string;
+      };
+      message: string;
+    };
+  }> {
+    const tenantId = this.getTenantId();
+    const url = this.buildUrl(`/api/tenants/${tenantId}/campaigns/${campaignId}/test-call`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ phoneNumber }),
+    });
+    return this.handleResponse(response);
+  }
+
+  async getTestCallStatus(campaignId: string, callSid: string): Promise<{
+    data: {
+      callSid: string;
+      status: string;
+      duration: string;
+      from: string;
+      to: string;
+      startTime: string;
+      endTime: string;
+    };
+  }> {
+    const tenantId = this.getTenantId();
+    const url = this.buildUrl(`/api/tenants/${tenantId}/campaigns/${campaignId}/test-call/${callSid}/status`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, { headers });
+    return this.handleResponse(response);
+  }
+
+  async endTestCall(campaignId: string, callSid: string): Promise<{
+    data: {
+      callSid: string;
+      status: string;
+      message: string;
+    };
+  }> {
+    const tenantId = this.getTenantId();
+    const url = this.buildUrl(`/api/tenants/${tenantId}/campaigns/${campaignId}/test-call/${callSid}/end`);
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+    });
+    return this.handleResponse(response);
+  }
 }
 
 // ===============================
@@ -287,14 +356,19 @@ class CampaignService extends BaseGobiService {
 export interface PhoneNumber {
   id: string;
   number: string;
-  type: 'LOCAL' | 'MOBILE' | 'TOLL_FREE';
-  label?: string;
-  extension?: string;
-  provider: string;
-  isActive: boolean;
+  friendlyName?: string;
+  status: string; // ACTIVE, AVAILABLE, etc.
+  capabilities?: string;
+  twilioSid?: string;
+  twilioAccount?: string;
+  country: string;
+  region?: string;
+  monthlyCost?: number;
+  assignedAgentId?: string;
+  callDirection: string; // INBOUND, OUTBOUND, BOTH
+  webhookUrl?: string;
   tenantId: string;
   campaignId?: string;
-  platformTrunkId?: string;
   createdAt: Date;
   updatedAt: Date;
   tenant?: {
@@ -303,6 +377,11 @@ export interface PhoneNumber {
     domain: string;
   };
   campaign?: Campaign;
+  livekitTrunk?: {
+    id: string;
+    name: string;
+    status: string;
+  };
 }
 
 export interface CreatePhoneNumberData {

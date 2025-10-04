@@ -9,6 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Table,
   TableBody,
   TableCell,
@@ -36,6 +46,8 @@ import {
   TrendingUp,
   TrendingDown,
   Zap,
+  PhoneCall,
+  Loader2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -46,6 +58,17 @@ export default function CampaignDetail() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Test call states
+  const [isTestCallDialogOpen, setIsTestCallDialogOpen] = useState(false);
+  const [testPhoneNumber, setTestPhoneNumber] = useState('');
+  const [isInitiatingCall, setIsInitiatingCall] = useState(false);
+  const [currentCall, setCurrentCall] = useState<{
+    callSid?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (id && typeof id === 'string') {
@@ -88,6 +111,62 @@ export default function CampaignDetail() {
     router.push('/campaigns');
   };
 
+  const handleTestCall = async () => {
+    if (!testPhoneNumber.trim()) {
+      toast.error('Please enter a phone number');
+      return;
+    }
+
+    setIsInitiatingCall(true);
+    try {
+      const response = await gobiService.campaigns.initiateTestCall(
+        campaign!.id,
+        testPhoneNumber
+      );
+
+      setCurrentCall({
+        callSid: response.data.callSid,
+        status: response.data.status,
+        from: response.data.from,
+        to: response.data.to,
+      });
+
+      toast.success('Test call initiated successfully!');
+    } catch (error: any) {
+      console.error('Error initiating test call:', error);
+      toast.error(error.response?.data?.error?.message || 'Failed to initiate test call');
+    } finally {
+      setIsInitiatingCall(false);
+    }
+  };
+
+  const handleEndCall = async () => {
+    if (!currentCall?.callSid) return;
+
+    try {
+      await gobiService.campaigns.endTestCall(campaign!.id, currentCall.callSid);
+      toast.success('Call ended successfully');
+      setCurrentCall(null);
+      setTestPhoneNumber('');
+      setIsTestCallDialogOpen(false);
+    } catch (error: any) {
+      console.error('Error ending call:', error);
+      toast.error('Failed to end call');
+    }
+  };
+
+  const handleCloseTestCallDialog = () => {
+    if (currentCall && currentCall.status !== 'completed') {
+      if (confirm('There is an active call. Do you want to end it?')) {
+        handleEndCall();
+      }
+    } else {
+      setIsTestCallDialogOpen(false);
+      setCurrentCall(null);
+      setTestPhoneNumber('');
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 p-4 lg:p-6">
@@ -118,6 +197,7 @@ export default function CampaignDetail() {
   }
 
   const phoneNumbers = campaign.phoneNumbers || [];
+  const agents = campaign.agents || [];
   const tenant = campaign.tenant;
 
   return (
@@ -144,6 +224,15 @@ export default function CampaignDetail() {
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsTestCallDialogOpen(true)}
+              disabled={!campaign?.phoneNumbers?.length || !campaign?.agents?.length}
+            >
+              <PhoneCall className="h-4 w-4 mr-2" />
+              Test Call
+            </Button>
             <Button size="sm" onClick={handleEdit}>
               <Edit className="h-4 w-4 mr-2" />
               Edit Campaign
@@ -152,7 +241,7 @@ export default function CampaignDetail() {
         </div>
 
         {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card className="border-0 shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -182,6 +271,20 @@ export default function CampaignDetail() {
                   <div className="flex items-center gap-2 mt-2">
                     <Phone className="h-5 w-5 text-green-500" />
                     <span className="text-lg font-semibold">{phoneNumbers.length}</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Agents</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Bot className="h-5 w-5 text-blue-500" />
+                    <span className="text-lg font-semibold">{agents.length}</span>
                   </div>
                 </div>
               </div>
@@ -279,8 +382,8 @@ export default function CampaignDetail() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Number</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Provider</TableHead>
+                        <TableHead>Friendly Name</TableHead>
+                        <TableHead>Country</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -294,11 +397,11 @@ export default function CampaignDetail() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">{number.type}</Badge>
+                            {number.friendlyName || 'N/A'}
                           </TableCell>
-                          <TableCell>{number.provider || 'N/A'}</TableCell>
+                          <TableCell>{number.country || 'N/A'}</TableCell>
                           <TableCell>
-                            {number.isActive ? (
+                            {number.status === 'ACTIVE' ? (
                               <Badge variant="default" className="gap-1">
                                 <CheckCircle className="h-3 w-3" />
                                 Active
@@ -306,7 +409,7 @@ export default function CampaignDetail() {
                             ) : (
                               <Badge variant="secondary" className="gap-1">
                                 <XCircle className="h-3 w-3" />
-                                Inactive
+                                {number.status || 'Inactive'}
                               </Badge>
                             )}
                           </TableCell>
@@ -318,6 +421,71 @@ export default function CampaignDetail() {
                   <div className="text-center py-8">
                     <Phone className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                     <p className="text-gray-500">No phone numbers assigned</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Assigned Agents */}
+            <Card className="border-0 shadow-sm">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Bot className="h-5 w-5" />
+                    Assigned Agents
+                  </CardTitle>
+                  <Badge variant="secondary">{agents.length} Total</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {agents.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Agent Name</TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead>Voice</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Priority</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {agents.map((campaignAgent) => (
+                        <TableRow key={campaignAgent.id}>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <Bot className="h-4 w-4 text-blue-500" />
+                              {campaignAgent.agent.name}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{campaignAgent.agent.model || 'N/A'}</Badge>
+                          </TableCell>
+                          <TableCell>{campaignAgent.agent.voice || 'N/A'}</TableCell>
+                          <TableCell>
+                            {campaignAgent.agent.status === 'ACTIVE' ? (
+                              <Badge variant="default" className="gap-1">
+                                <CheckCircle className="h-3 w-3" />
+                                Active
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="gap-1">
+                                <XCircle className="h-3 w-3" />
+                                {campaignAgent.agent.status || 'Inactive'}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{campaignAgent.priority}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-8">
+                    <Bot className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500">No agents assigned</p>
                   </div>
                 )}
               </CardContent>
@@ -386,11 +554,128 @@ export default function CampaignDetail() {
             </Card>
           </div>
         </div>
+
+        {/* Test Call Dialog */}
+        <Dialog open={isTestCallDialogOpen} onOpenChange={handleCloseTestCallDialog}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <PhoneCall className="h-5 w-5" />
+                Test Call
+              </DialogTitle>
+              <DialogDescription>
+                Make a test call to verify your campaign configuration. The AI agent will automatically join the call.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              {!currentCall ? (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="phoneNumber">Destination Phone Number</Label>
+                    <Input
+                      id="phoneNumber"
+                      placeholder="+1234567890"
+                      value={testPhoneNumber}
+                      onChange={(e) => setTestPhoneNumber(e.target.value)}
+                      disabled={isInitiatingCall}
+                    />
+                    <p className="text-xs text-gray-500">
+                      Enter the phone number in E.164 format (e.g., +1234567890)
+                    </p>
+                  </div>
+
+                  <div className="bg-blue-50 p-4 rounded-lg space-y-2">
+                    <p className="text-sm font-medium text-blue-900">Campaign Information</p>
+                    <div className="text-sm text-blue-700 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span>Caller ID:</span>
+                        <span className="font-mono font-medium">
+                          {phoneNumbers[0]?.number || 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>AI Agent:</span>
+                        <span className="font-medium">
+                          {agents[0]?.agent?.name || 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-green-50 p-4 rounded-lg space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-5 w-5 text-green-600 animate-pulse" />
+                      <p className="text-sm font-medium text-green-900">Call In Progress</p>
+                    </div>
+                    <div className="text-sm text-green-700 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span>From:</span>
+                        <span className="font-mono font-medium">{currentCall.from}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>To:</span>
+                        <span className="font-mono font-medium">{currentCall.to}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Status:</span>
+                        <Badge variant="default">{currentCall.status}</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Call SID:</span>
+                        <span className="font-mono text-xs">{currentCall.callSid}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <p className="text-sm text-blue-700">
+                      The AI agent has joined the call and is ready to converse. Answer the phone to start the conversation.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              {!currentCall ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={handleCloseTestCallDialog}
+                    disabled={isInitiatingCall}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleTestCall}
+                    disabled={isInitiatingCall || !testPhoneNumber.trim()}
+                  >
+                    {isInitiatingCall ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Initiating...
+                      </>
+                    ) : (
+                      <>
+                        <PhoneCall className="h-4 w-4 mr-2" />
+                        Start Call
+                      </>
+                    )}
+                  </Button>
+                </>
+              ) : (
+                <Button variant="destructive" onClick={handleEndCall}>
+                  <XCircle className="h-4 w-4 mr-2" />
+                  End Call
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
-}
-
-function Label({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <label className={`block text-sm font-medium ${className}`}>{children}</label>;
 }
