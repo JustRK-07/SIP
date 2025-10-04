@@ -1,7 +1,9 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import campaignService from "@/services/campaignService";
-import type { PhoneNumber } from "@/services/campaignService";
+import { gobiService } from "@/services/gobiService";
+import type { PhoneNumber } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -93,8 +95,8 @@ export default function PhoneNumbers() {
   const fetchPhoneNumbers = async () => {
     setIsLoading(true);
     try {
-      const numbers = await campaignService.getPhoneNumbers();
-      setPhoneNumbers(numbers);
+      const response = await gobiService.numbers.getAll();
+      setPhoneNumbers(response.data || []);
     } catch (error) {
       console.error('Error fetching phone numbers:', error);
       toast.error('Failed to fetch phone numbers');
@@ -107,7 +109,8 @@ export default function PhoneNumbers() {
   const searchAvailableNumbers = async () => {
     setIsSearching(true);
     try {
-      const numbers = await campaignService.getAvailablePhoneNumbers(searchCriteria);
+      const response = await gobiService.numbers.getAvailable(searchCriteria);
+      const numbers = response.data || [];
       setAvailableNumbers(numbers);
       if (numbers.length === 0) {
         toast.error('No available numbers found with these criteria');
@@ -130,7 +133,7 @@ export default function PhoneNumbers() {
 
     setIsPurchasing(true);
     try {
-      await campaignService.purchasePhoneNumber(number.phoneNumber);
+      await gobiService.numbers.create({ number: number.phoneNumber });
       toast.success(`Successfully purchased ${number.phoneNumber}!`);
       setPurchaseDialogOpen(false);
       setAvailableNumbers([]);
@@ -144,20 +147,24 @@ export default function PhoneNumbers() {
 
   // Delete a phone number
   const handleDeleteNumber = async (numberId: string, phoneNumber: string) => {
-    if (!confirm(`Are you sure you want to delete ${phoneNumber}?`)) {
+    if (!confirm(`Are you sure you want to delete ${phoneNumber}?\n\nThis will release the number from Twilio.`)) {
       return;
     }
 
     try {
-      // TODO: Implement delete API in campaignService
-      toast.error('Delete functionality not yet implemented');
-    } catch (error) {
-      toast.error('Failed to delete phone number');
+      await gobiService.numbers.delete(numberId, true);
+      toast.success(`Successfully deleted ${phoneNumber}`);
+      await fetchPhoneNumbers();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete phone number');
     }
   };
 
   useEffect(() => {
-    fetchPhoneNumbers();
+    // Only fetch on client side
+    if (typeof window !== 'undefined') {
+      fetchPhoneNumbers();
+    }
   }, []);
 
   // Filter phone numbers

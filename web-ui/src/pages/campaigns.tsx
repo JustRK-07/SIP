@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { gobiService } from "@/services/gobiService";
@@ -143,10 +145,13 @@ export default function Campaigns() {
   };
 
   useEffect(() => {
-    fetchCampaigns();
-    fetchPhoneNumbers();
-    fetchLeadLists();
-    fetchAgents();
+    // Only fetch on client side
+    if (typeof window !== 'undefined') {
+      fetchCampaigns();
+      fetchPhoneNumbers();
+      fetchLeadLists();
+      fetchAgents();
+    }
   }, []);
 
   const handleCreateCampaign = async () => {
@@ -286,10 +291,10 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
             <p className="text-sm text-gray-600 mt-1">Create and manage outreach campaigns</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
-              onClick={() => refetchCampaigns()}
+              onClick={() => fetchCampaigns()}
             >
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
@@ -680,10 +685,13 @@ ${campaign.phoneNumbers?.length ? `\n- Phone Numbers: ${campaign.phoneNumbers.le
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {campaign.dispatchRule?.agentName ? (
+                          {campaign.agents && campaign.agents.length > 0 ? (
                             <div className="flex items-center gap-2">
                               <Bot className="h-4 w-4 text-blue-500" />
-                              <span className="text-sm">{campaign.dispatchRule.agentName}</span>
+                              <span className="text-sm">{campaign.agents[0].agent.name}</span>
+                              {campaign.agents.length > 1 && (
+                                <span className="text-xs text-gray-500">+{campaign.agents.length - 1}</span>
+                              )}
                             </div>
                           ) : (
                             <span className="text-gray-400 text-sm">No agent</span>

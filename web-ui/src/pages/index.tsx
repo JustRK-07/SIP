@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import Head from "next/head";
 import { gobiService } from "@/services/gobiService";
@@ -90,11 +92,14 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchDashboardData();
-    
-    // Auto-refresh every 10 seconds
-    const interval = setInterval(fetchDashboardData, 10000);
-    return () => clearInterval(interval);
+    // Only fetch on client side
+    if (typeof window !== 'undefined') {
+      fetchDashboardData();
+
+      // Auto-refresh every 10 seconds
+      const interval = setInterval(fetchDashboardData, 10000);
+      return () => clearInterval(interval);
+    }
   }, []);
 
   // Quick actions

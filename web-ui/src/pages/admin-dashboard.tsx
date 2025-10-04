@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { gobiService } from "@/services/gobiService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

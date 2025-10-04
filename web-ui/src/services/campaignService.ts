@@ -77,6 +77,11 @@ class CampaignService {
 
   // Get auth headers from localStorage
   private getAuthHeaders(): HeadersInit {
+    if (typeof window === 'undefined') {
+      return {
+        'Content-Type': 'application/json',
+      };
+    }
     const token = localStorage.getItem('access_token');
     return {
       'Authorization': token ? `Bearer ${token}` : '',
@@ -86,6 +91,9 @@ class CampaignService {
 
   // Get tenant ID from JWT token
   private getTenantId(): string {
+    if (typeof window === 'undefined') {
+      throw new Error('Cannot access localStorage during SSR');
+    }
     const token = localStorage.getItem('access_token');
     if (!token) throw new Error('No access token found');
 
@@ -272,7 +280,7 @@ class CampaignService {
       {
         method: 'POST',
         headers: this.getAuthHeaders(),
-        body: JSON.stringify({ phoneNumber }),
+        body: JSON.stringify({ number: phoneNumber }),
       }
     );
 
@@ -283,6 +291,22 @@ class CampaignService {
 
     const result = await response.json();
     return result.data;
+  }
+
+  // Delete phone number
+  async deletePhoneNumber(numberId: string, permanent: boolean = false): Promise<void> {
+    const tenantId = this.getTenantId();
+    const url = `${GOBI_API_URL}/api/tenants/${tenantId}/phone-numbers/${numberId}${permanent ? '?permanent=true' : ''}`;
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: this.getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error?.message || 'Failed to delete phone number');
+    }
   }
 
   // Get LiveKit trunks

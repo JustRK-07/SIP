@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { gobiService } from "@/services/gobiService";
 import type { PhoneNumber, AvailablePhoneNumber, CreatePhoneNumberData } from "@/services/gobiService";
@@ -185,7 +187,10 @@ export default function NumberManagement() {
       setIsLoading(false);
     };
 
-    loadData();
+    // Only load on client side
+    if (typeof window !== 'undefined') {
+      loadData();
+    }
   }, []);
 
   // Format phone number display

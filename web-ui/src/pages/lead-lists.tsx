@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { gobiService, type LeadList as LeadListType } from "@/services/gobiService";
@@ -95,13 +97,17 @@ export default function LeadLists() {
 
   // Fetch data on component mount
   useEffect(() => {
-    fetchLeadLists();
-    fetchCampaigns();
+    // Only fetch on client side
+    if (typeof window !== 'undefined') {
+      fetchLeadLists();
+      fetchCampaigns();
+    }
   }, []);
 
   // Fetch list details when dialog opens
   useEffect(() => {
-    if (selectedList && viewDialogOpen) {
+    // Only fetch on client side
+    if (typeof window !== 'undefined' && selectedList && viewDialogOpen) {
       fetchListDetails(selectedList.id);
     }
   }, [selectedList, viewDialogOpen]);

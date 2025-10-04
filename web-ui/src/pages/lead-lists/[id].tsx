@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { gobiService } from "@/services/gobiService";
@@ -130,7 +132,8 @@ export default function LeadListDetail() {
   const itemsPerPage = 20;
 
   useEffect(() => {
-    if (id && typeof id === "string") {
+    // Only fetch on client side
+    if (typeof window !== 'undefined' && id && typeof id === "string") {
       fetchLeadListDetails();
       fetchCampaigns();
     }

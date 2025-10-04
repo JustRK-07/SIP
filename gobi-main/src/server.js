@@ -63,6 +63,10 @@ const platformTrunkRoutes = require('./routes/platformTrunks');
 const livekitTrunkRoutes = require('./routes/livekitTrunks');
 const agentRoutes = require('./routes/agents');
 const leadListRoutes = require('./routes/leadLists');
+const phoneNumberSyncRoutes = require('./routes/phoneNumberSync');
+
+// Import services
+const PhoneNumberSyncService = require('./services/PhoneNumberSyncService');
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -73,6 +77,7 @@ app.use('/api/platform-trunks', platformTrunkRoutes);
 app.use('/api/livekit-trunks', livekitTrunkRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/lead-lists', leadListRoutes);
+app.use('/api', phoneNumberSyncRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -98,12 +103,14 @@ app.use('/{*any}', (req, res) => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
+  PhoneNumberSyncService.stop();
   await prisma.$disconnect();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log('Shutting down gracefully...');
+  PhoneNumberSyncService.stop();
   await prisma.$disconnect();
   process.exit(0);
 });
@@ -113,6 +120,10 @@ app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+
+  // Start background sync service (5 minute interval)
+  console.log('Starting phone number sync service...');
+  PhoneNumberSyncService.start(5 * 60 * 1000);
 });
 
 module.exports = app;

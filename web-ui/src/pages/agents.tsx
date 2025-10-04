@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { gobiService, type Agent, type CreateAgentData } from "@/services/gobiService";
@@ -159,16 +161,19 @@ export default function Agents() {
 
   // Auto-refresh effect
   useEffect(() => {
-    fetchAgents();
-    fetchStats();
-    fetchTemplates();
+    // Only fetch on client side
+    if (typeof window !== 'undefined') {
+      fetchAgents();
+      fetchStats();
+      fetchTemplates();
 
-    if (autoRefresh) {
-      const interval = setInterval(() => {
-        fetchAgents();
-        fetchStats();
-      }, 5000);
-      return () => clearInterval(interval);
+      if (autoRefresh) {
+        const interval = setInterval(() => {
+          fetchAgents();
+          fetchStats();
+        }, 5000);
+        return () => clearInterval(interval);
+      }
     }
   }, [currentPage, statusFilter, searchTerm, autoRefresh]);
 
@@ -345,8 +350,8 @@ export default function Agents() {
 
   // Stats calculations
   const totalAgents = agents?.length || 0;
-  const runningAgents = agents?.filter(a => a.status === "RUNNING").length || 0;
-  const stoppedAgents = agents?.filter(a => a.status === "STOPPED" || a.status === "INACTIVE" || a.status === "ACTIVE").length || 0;
+  const runningAgents = agents?.filter(a => a.status === "RUNNING" || a.status === "ACTIVE").length || 0;
+  const stoppedAgents = agents?.filter(a => a.status === "STOPPED" || a.status === "INACTIVE").length || 0;
   const deployingAgents = agents?.filter(a => a.status === "DEPLOYING").length || 0;
   const errorAgents = agents?.filter(a => a.status === "ERROR").length || 0;
 
@@ -358,8 +363,8 @@ export default function Agents() {
     return matchesSearch && matchesStatus;
   });
 
-  // Use deployed agents from API (includes local agents)
-  const deployedAgentsList = agents || [];
+  // Filter only deployed agents (RUNNING, ACTIVE, or DEPLOYING status)
+  const deployedAgentsList = agents?.filter(a => a.status === "RUNNING" || a.status === "ACTIVE" || a.status === "DEPLOYING") || [];
 
   // Pagination
   const totalPages = Math.ceil((filteredAgents?.length || 0) / itemsPerPage);
@@ -715,16 +720,16 @@ export default function Agents() {
                     <CardTitle className="text-lg flex items-center gap-2">
                       Deployed Agents
                       <Badge variant="default" className="bg-green-500">
-                        {deployedAgentsList.filter(a => a.status === "RUNNING" || a.status === "ACTIVE").length} Running
+                        {runningAgents} Running
                       </Badge>
-                      {deployedAgentsList.filter(a => a.status === "DEPLOYING").length > 0 && (
+                      {deployingAgents > 0 && (
                         <Badge variant="outline" className="bg-blue-100 text-blue-700">
-                          {deployedAgentsList.filter(a => a.status === "DEPLOYING").length} Deploying
+                          {deployingAgents} Deploying
                         </Badge>
                       )}
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      Currently active and deploying agents
+                      Agents currently deployed or being deployed
                     </CardDescription>
                   </div>
                 </div>

@@ -505,55 +505,84 @@ router.post('/:tenantId/phone-numbers', authenticateToken, requireTenantAccess, 
 
 
     let purchasedNumber;
+    let phoneNumber;
+
     try {
-      // Purchase the phone number using TwilioService
-      console.log(`Attempting to purchase phone number: ${formattedNumber}${twilioTrunkSid ? ` with trunk SID: ${twilioTrunkSid}` : ''}`);
-      
+      // Step 1: Purchase the phone number from Twilio
+      console.log(`[PURCHASE] Attempting to purchase: ${formattedNumber}${twilioTrunkSid ? ` with trunk SID: ${twilioTrunkSid}` : ''}`);
+
       purchasedNumber = await TwilioService.purchasePhoneNumber({
         phoneNumber: formattedNumber,
         friendlyName: label || `${tenant.name} - ${formattedNumber}`,
         trunkSid: twilioTrunkSid
       });
 
-      console.log(`Successfully purchased phone number: ${purchasedNumber.phoneNumber} with SID: ${purchasedNumber.sid}`);
-      
-    } catch (twilioError) {
-      console.error('Twilio purchase error:', twilioError);
-      
-      const errorInfo = TwilioService.handleTwilioError(twilioError);
-      
-      return res.status(400).json({
-        error: errorInfo
+      console.log(`[PURCHASE] ✅ Successfully purchased from Twilio - SID: ${purchasedNumber.sid}`);
+
+      // Step 2: Create database record with Twilio SID
+      try {
+        phoneNumber = await prisma.phoneNumber.create({
+          data: {
+            number: formattedNumber,
+            friendlyName: label?.trim() || purchasedNumber.friendlyName,
+            type,
+            status: 'ACTIVE',
+            capabilities: 'voice,sms',
+            twilioSid: purchasedNumber.sid,
+            twilioAccount: process.env.TWILIO_ACCOUNT_SID,
+            country: purchasedNumber.isoCountry || 'US',
+            region: purchasedNumber.region,
+            monthlyCost: 1.00, // Update based on Twilio pricing
+            callDirection: 'BOTH',
+            tenantId,
+            campaignId
+          },
+          include: {
+            tenant: {
+              select: { id: true, name: true, domain: true }
+            },
+            campaign: {
+              select: { id: true, name: true, description: true, campaignType: true }
+            }
+          }
+        });
+
+        console.log(`[PURCHASE] ✅ Successfully saved to database - ID: ${phoneNumber.id}`);
+
+      } catch (dbError) {
+        // CRITICAL: Database save failed - ROLLBACK Twilio purchase
+        console.error(`[PURCHASE] ❌ Database save failed! Rolling back Twilio purchase...`);
+        console.error(`[PURCHASE] DB Error:`, dbError.message);
+
+        try {
+          await TwilioService.releasePhoneNumber(formattedNumber);
+          console.log(`[PURCHASE] ✅ Successfully rolled back Twilio purchase`);
+        } catch (rollbackError) {
+          console.error(`[PURCHASE] ⚠️ CRITICAL: Rollback failed! Number ${formattedNumber} orphaned in Twilio!`);
+          console.error(`[PURCHASE] Rollback error:`, rollbackError.message);
+          // TODO: Alert admin - orphaned number needs manual cleanup
+        }
+
+        throw new Error(`Failed to save number to database: ${dbError.message}`);
+      }
+
+    } catch (error) {
+      console.error('[PURCHASE] Error:', error);
+
+      if (error.code) {
+        // Twilio error
+        const errorInfo = TwilioService.handleTwilioError(error);
+        return res.status(400).json({ error: errorInfo });
+      }
+
+      // Database or other error
+      return res.status(500).json({
+        error: {
+          message: error.message || 'Failed to purchase phone number',
+          code: 'PURCHASE_ERROR'
+        }
       });
     }
-
-    // Create database record with Twilio SID, platform trunk, and campaign associations
-    const phoneNumber = await prisma.phoneNumber.create({
-      data: {
-        number: formattedNumber,
-        type,
-        label: label?.trim(),
-        extension: extension?.trim(),
-        provider,
-        isActive,
-        tenantId,
-        platformTrunkId, // Associate with platform trunk if found
-        campaignId, // Associate with campaign if provided
-        // Store Twilio SID for future reference (we'd need to add this field to schema)
-        // twilioSid: purchasedNumber.sid
-      },
-      include: {
-        tenant: {
-          select: { id: true, name: true, domain: true }
-        },
-        platformTrunk: {
-          select: { id: true, name: true, description: true }
-        },
-        campaign: {
-          select: { id: true, name: true, description: true, campaignType: true }
-        }
-      }
-    });
 
     // If phone number is associated with a campaign, update the LiveKit trunk
     let livekitTrunkUpdate = null;

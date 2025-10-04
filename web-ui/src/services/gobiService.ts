@@ -10,10 +10,16 @@ const GOBI_MAIN_API_URL = process.env.NEXT_PUBLIC_GOBI_MAIN_API_URL || 'http://l
 
 // Auth functions using proper authentication with automatic token refresh
 const getToken = async (): Promise<string> => {
+  if (typeof window === 'undefined') {
+    throw new Error('Cannot access authentication during server-side rendering');
+  }
   return authManager.getValidToken();
 };
 
 const getTenantId = (): string => {
+  if (typeof window === 'undefined') {
+    throw new Error('Cannot access tenant ID during server-side rendering');
+  }
   return authManager.getTenantId();
 };
 
@@ -33,7 +39,19 @@ class BaseGobiService {
     this.baseUrl = GOBI_MAIN_API_URL;
   }
 
+  /**
+   * Check if we're running in a browser context
+   * Throws an error during SSR to prevent localStorage access
+   */
+  protected checkBrowserContext(): void {
+    if (typeof window === 'undefined') {
+      throw new Error('API calls are only available in browser context');
+    }
+  }
+
   protected async getAuthHeaders(): Promise<HeadersInit> {
+    this.checkBrowserContext();
+
     try {
       const token = await getToken();
       return {
@@ -108,6 +126,45 @@ export interface Campaign {
   updatedAt: Date;
   tenantId: string;
   phoneNumbers?: PhoneNumber[];
+  agents?: Array<{
+    id: string;
+    campaignId: string;
+    agentId: string;
+    isActive: boolean;
+    priority: number;
+    createdAt: Date;
+    updatedAt: Date;
+    agent: {
+      id: string;
+      name: string;
+      status: string;
+      model?: string;
+      voice?: string;
+      createdAt: Date;
+    };
+  }>;
+  livekitTrunk?: {
+    id: string;
+    name: string;
+    description?: string;
+    trunkType: string;
+    livekitTrunkId?: string;
+    status: string;
+    maxConcurrentCalls?: number;
+  };
+  dispatchRule?: {
+    id: string;
+    name: string;
+    agentName?: string;
+    livekitDispatchRuleId?: string;
+    ruleType: string;
+    roomName?: string;
+    status: string;
+  };
+  _count?: {
+    phoneNumbers?: number;
+    agents?: number;
+  };
   tenant?: {
     id: string;
     name: string;

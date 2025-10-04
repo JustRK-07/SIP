@@ -70,11 +70,30 @@ router.get('/:tenantId/campaigns', authenticateToken, requireTenantAccess, async
       defaultSortOrder: 'desc'
     });
 
-    // Add include for phone numbers count
+    // Add include for phone numbers, agents, and counts
     queryOptions.include = {
       _count: {
         select: {
-          phoneNumbers: true
+          phoneNumbers: true,
+          agents: true
+        }
+      },
+      phoneNumbers: {
+        select: {
+          id: true,
+          number: true,
+          friendlyName: true
+        }
+      },
+      agents: {
+        include: {
+          agent: {
+            select: {
+              id: true,
+              name: true,
+              status: true
+            }
+          }
         }
       }
     };
@@ -122,12 +141,25 @@ router.get('/:tenantId/campaigns/:id', authenticateToken, requireTenantAccess, a
         select: {
           id: true,
           number: true,
-          type: true,
-          label: true,
-          extension: true,
-          provider: true,
-          isActive: true,
+          friendlyName: true,
+          status: true,
+          country: true,
+          callDirection: true,
           createdAt: true
+        }
+      },
+      agents: {
+        include: {
+          agent: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              model: true,
+              voice: true,
+              createdAt: true
+            }
+          }
         }
       },
       tenant: {
@@ -242,8 +274,7 @@ router.post('/:tenantId/campaigns', authenticateToken, requireTenantAccess, asyn
         const phoneNumberRecords = await prisma.phoneNumber.findMany({
           where: {
             id: { in: numberIds },
-            tenantId,
-            isActive: true
+            tenantId
           },
           select: {
             id: true,
@@ -377,6 +408,25 @@ router.post('/:tenantId/campaigns', authenticateToken, requireTenantAccess, asyn
         console.log(`Created ${validatedAgents.length} CampaignAgent record(s) for campaign ${campaign.id}`);
       } catch (error) {
         console.error('Error creating CampaignAgent records:', error);
+        // Continue without failing campaign creation
+      }
+    }
+
+    // Link phone numbers to campaign if provided
+    if (numberIds && numberIds.length > 0) {
+      try {
+        await prisma.phoneNumber.updateMany({
+          where: {
+            id: { in: numberIds },
+            tenantId
+          },
+          data: {
+            campaignId: campaign.id
+          }
+        });
+        console.log(`Linked ${numberIds.length} phone number(s) to campaign ${campaign.id}`);
+      } catch (error) {
+        console.error('Error linking phone numbers to campaign:', error);
         // Continue without failing campaign creation
       }
     }

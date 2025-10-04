@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { agentService, type Agent, type AgentTemplate, type CreateAgentData } from "@/services/agentService";
